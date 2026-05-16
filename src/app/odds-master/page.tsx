@@ -8,11 +8,6 @@ import {
 import Link from 'next/link';
 import { supabase } from '@/app/supabase';
 
-type Player = {
-  player_id: number;
-  player?: { display_name: string; position_id: number };
-};
-
 type Fixture = {
   id: number;
   starting_at: string;
@@ -61,8 +56,6 @@ export default function OddsMaster() {
   const [homeForm, setHomeForm] = useState<Fixture[]>([]);
   const [awayForm, setAwayForm] = useState<Fixture[]>([]);
   const [loadingForm, setLoadingForm] = useState(false);
-  const [homePlayers, setHomePlayers] = useState<Player[]>([]);
-  const [awayPlayers, setAwayPlayers] = useState<Player[]>([]);
   const [homeOdds, setHomeOdds] = useState(2.00);
   const [drawOdds, setDrawOdds] = useState(3.00);
   const [awayOdds, setAwayOdds] = useState(4.00);
@@ -121,7 +114,7 @@ export default function OddsMaster() {
       setHomeForm(homeData.data || []);
       setAwayForm(awayData.data || []);
     } catch (e) {
-      console.error('Form fetch error:', e);
+      console.error('Form error:', e);
       setHomeForm([]);
       setAwayForm([]);
     } finally {
@@ -151,11 +144,11 @@ export default function OddsMaster() {
   };
 
   const getFormStats = (form: Fixture[], teamId: number) => {
-    const wins = form.filter(f => 
-      getResult(f, teamId).label === 'W'
+    const wins = form.filter(
+      f => getResult(f, teamId).label === 'W'
     ).length;
-    const losses = form.filter(f => 
-      getResult(f, teamId).label === 'L'
+    const losses = form.filter(
+      f => getResult(f, teamId).label === 'L'
     ).length;
     const draws = form.length - wins - losses;
     return { wins, losses, draws };
@@ -171,8 +164,6 @@ export default function OddsMaster() {
     setDrawProb(25);
     setAwayProb(25);
     setSelectedOutcome('home');
-    setHomePlayers([]);
-    setAwayPlayers([]);
     const homeId = match.participants?.[0]?.id;
     const awayId = match.participants?.[1]?.id;
     if (homeId && awayId) {
@@ -188,12 +179,15 @@ export default function OddsMaster() {
     }
     setSavingDraft(true);
     try {
-      const homeTeam = selectedMatch.participants?.[0]?.name ?? 'Home';
-      const awayTeam = selectedMatch.participants?.[1]?.name ?? 'Away';
+      const homeTeam = 
+        selectedMatch.participants?.[0]?.name ?? 'Home';
+      const awayTeam = 
+        selectedMatch.participants?.[1]?.name ?? 'Away';
       const matchName = `${homeTeam} vs ${awayTeam}`;
-      const leagueName = selectedMatch.league?.name ?? 'Unknown';
+      const leagueName = 
+        selectedMatch.league?.name ?? 'Unknown';
 
-      const { error } = await supabase.from('markets').insert([{
+      const insertData = {
         name: `${matchName} - ${selectedOutcome.toUpperCase()}`,
         odds: activeOdds,
         price: stake,
@@ -202,9 +196,23 @@ export default function OddsMaster() {
         away_team: awayTeam,
         status: 'draft',
         is_live: false,
-      }]);
+      };
 
-      if (error) throw error;
+      console.log('Inserting:', insertData);
+
+      const { data, error } = await supabase
+        .from('markets')
+        .insert([insertData])
+        .select();
+
+      console.log('Result:', data, error);
+
+      if (error) {
+        alert(
+          `Supabase Error: ${error.message} | Code: ${error.code}`
+        );
+        return;
+      }
 
       const draft: DraftItem = {
         matchId: selectedMatch.id,
@@ -221,7 +229,7 @@ export default function OddsMaster() {
       setDrafts(prev => [...prev, draft]);
       alert(`✅ "${matchName}" saved to drafts!`);
     } catch (e) {
-      alert('Error: ' + String(e));
+      alert('Caught error: ' + String(e));
     } finally {
       setSavingDraft(false);
     }
@@ -248,9 +256,9 @@ export default function OddsMaster() {
       const inventoryRows = drafts.map(d => ({
         match_name: d.matchName,
         league_name: d.leagueName,
-        odds: d.selectedOutcome === 'home' 
-          ? d.homeOdds 
-          : d.selectedOutcome === 'draw' 
+        odds: d.selectedOutcome === 'home'
+          ? d.homeOdds
+          : d.selectedOutcome === 'draw'
           ? d.drawOdds : d.awayOdds,
         stake: d.stake,
         expected_return: d.expectedReturn,
@@ -271,17 +279,11 @@ export default function OddsMaster() {
 
       if (invError) throw invError;
 
-      const totalStaked = drafts.reduce(
-        (s, d) => s + d.stake, 0
-      );
-      const totalExpected = drafts.reduce(
-        (s, d) => s + d.expectedReturn, 0
-      );
-
       alert(
         `🚀 ${drafts.length} bets dispatched!\n` +
-        `💰 Total Staked: $${totalStaked.toFixed(2)}\n` +
-        `📈 Total Expected: $${totalExpected.toFixed(2)}`
+        `Total Expected: $${drafts.reduce(
+          (s, d) => s + d.expectedReturn, 0
+        ).toFixed(2)}`
       );
       setDrafts([]);
     } catch (e) {
@@ -298,11 +300,12 @@ export default function OddsMaster() {
         {/* Header */}
         <div className="flex justify-between items-center mb-8">
           <div>
-            <Link href="/" 
+            <Link href="/"
               className="flex items-center text-zinc-500 
-                hover:text-yellow-500 mb-3 text-[10px] font-bold 
-                tracking-widest uppercase transition-colors">
-              <ArrowLeft size={14} className="mr-2" /> 
+                hover:text-yellow-500 mb-3 text-[10px] 
+                font-bold tracking-widest uppercase 
+                transition-colors">
+              <ArrowLeft size={14} className="mr-2" />
               Return to Hub
             </Link>
             <div className="flex items-center gap-3">
@@ -314,7 +317,7 @@ export default function OddsMaster() {
             </div>
             <p className="text-xs text-zinc-500 mt-1 
               uppercase tracking-widest">
-              Analysis & Draft Center // {matches.length} matches today
+              Analysis & Draft Center // {matches.length} matches
             </p>
           </div>
 
@@ -325,13 +328,13 @@ export default function OddsMaster() {
               rounded-xl font-black text-sm uppercase 
               tracking-wider transition-all
               ${drafts.length > 0
-                ? 'bg-yellow-500 hover:bg-yellow-400 text-black shadow-lg'
+                ? 'bg-yellow-500 hover:bg-yellow-400 text-black'
                 : 'bg-zinc-800 text-zinc-600 cursor-not-allowed'
               }`}
           >
             <Send size={20} />
-            {dispatching 
-              ? 'Dispatching...' 
+            {dispatching
+              ? 'Dispatching...'
               : `Dispatch All (${drafts.length})`
             }
           </button>
@@ -351,8 +354,7 @@ export default function OddsMaster() {
                   Today's Matches
                 </h3>
                 <button onClick={fetchMatches}
-                  className="text-zinc-500 hover:text-white 
-                    transition-colors">
+                  className="text-zinc-500 hover:text-white">
                   <RefreshCw size={14} />
                 </button>
               </div>
@@ -364,6 +366,11 @@ export default function OddsMaster() {
                     text-xs animate-pulse">
                     Loading matches...
                   </div>
+                ) : matches.length === 0 ? (
+                  <div className="p-8 text-center text-zinc-500 
+                    text-xs">
+                    No matches today
+                  </div>
                 ) : matches.map(match => {
                   const isSelected = selectedMatch?.id === match.id;
                   const isDrafted = drafts.some(
@@ -373,13 +380,15 @@ export default function OddsMaster() {
                     <button
                       key={match.id}
                       onClick={() => handleSelectMatch(match)}
-                      className={`w-full text-left p-4 transition-all 
-                        hover:bg-zinc-800/50 ${isSelected 
-                          ? 'bg-yellow-500/10 border-l-2 border-yellow-500' 
+                      className={`w-full text-left p-4 
+                        transition-all hover:bg-zinc-800/50 
+                        ${isSelected
+                          ? 'bg-yellow-500/10 border-l-2 border-yellow-500'
                           : ''
                         }`}
                     >
-                      <div className="flex justify-between items-start">
+                      <div className="flex justify-between 
+                        items-start">
                         <div className="flex-1">
                           <p className="text-[10px] text-zinc-500 
                             uppercase mb-1">
@@ -393,7 +402,8 @@ export default function OddsMaster() {
                             {match.participants?.[1]?.name ?? 'Away'}
                           </p>
                         </div>
-                        <div className="flex flex-col items-end gap-1">
+                        <div className="flex flex-col 
+                          items-end gap-1">
                           {isDrafted && (
                             <span className="text-[10px] 
                               bg-green-500/20 text-green-400 
@@ -402,8 +412,8 @@ export default function OddsMaster() {
                             </span>
                           )}
                           <ChevronRight size={16}
-                            className={isSelected 
-                              ? 'text-yellow-500' 
+                            className={isSelected
+                              ? 'text-yellow-500'
                               : 'text-zinc-600'
                             }
                           />
@@ -423,14 +433,11 @@ export default function OddsMaster() {
                 justify-center bg-zinc-900/30 border 
                 border-zinc-800 rounded-2xl min-h-96">
                 <div className="text-center text-zinc-600 p-12">
-                  <Target size={48} 
+                  <Target size={48}
                     className="mx-auto mb-4 opacity-30" />
                   <p className="font-bold uppercase 
                     tracking-widest text-sm">
                     Select a match to analyse
-                  </p>
-                  <p className="text-xs mt-2 text-zinc-700">
-                    Click any match from the list
                   </p>
                 </div>
               </div>
@@ -468,33 +475,34 @@ export default function OddsMaster() {
                   </div>
                 </div>
 
-                {/* Form — Last 5 Results */}
+                {/* Form */}
                 <div className="grid grid-cols-2 gap-4">
                   {[
-                    { 
-                      team: selectedMatch.participants?.[0], 
-                      form: homeForm, 
-                      label: 'HOME FORM' 
+                    {
+                      team: selectedMatch.participants?.[0],
+                      form: homeForm,
+                      label: 'HOME FORM'
                     },
-                    { 
-                      team: selectedMatch.participants?.[1], 
-                      form: awayForm, 
-                      label: 'AWAY FORM' 
+                    {
+                      team: selectedMatch.participants?.[1],
+                      form: awayForm,
+                      label: 'AWAY FORM'
                     },
                   ].map(({ team, form, label }) => {
                     const stats = getFormStats(
                       form, team?.id ?? 0
                     );
                     return (
-                      <div key={label} 
+                      <div key={label}
                         className="bg-zinc-900/50 border 
                           border-zinc-800 rounded-xl p-4">
                         <div className="flex items-center 
                           gap-2 mb-2">
-                          <Activity size={12} 
+                          <Activity size={12}
                             className="text-zinc-500" />
                           <p className="text-[10px] font-bold 
-                            uppercase tracking-widest text-zinc-500">
+                            uppercase tracking-widest 
+                            text-zinc-500">
                             {label}
                           </p>
                         </div>
@@ -506,15 +514,14 @@ export default function OddsMaster() {
                         {loadingForm ? (
                           <p className="text-xs text-zinc-600 
                             animate-pulse">
-                            Loading form...
+                            Loading...
                           </p>
                         ) : form.length === 0 ? (
                           <p className="text-xs text-zinc-600">
-                            No recent data available
+                            No recent data
                           </p>
                         ) : (
                           <>
-                            {/* W/L/D Dots */}
                             <div className="flex gap-1 mb-3">
                               {form.map((f) => {
                                 const r = getResult(
@@ -537,8 +544,6 @@ export default function OddsMaster() {
                                 );
                               })}
                             </div>
-
-                            {/* Stats Bar */}
                             <div className="grid grid-cols-3 
                               gap-2 text-center mb-2">
                               <div>
@@ -566,50 +571,26 @@ export default function OddsMaster() {
                                   text-zinc-500">L</p>
                               </div>
                             </div>
-
-                            {/* Progress Bar */}
                             <div className="flex gap-0.5 
                               h-1.5 rounded-full overflow-hidden">
                               <div
-                                className="bg-green-500 
-                                  transition-all duration-700"
+                                className="bg-green-500"
                                 style={{
                                   width: `${(stats.wins / Math.max(form.length, 1)) * 100}%`
                                 }}
                               />
                               <div
-                                className="bg-yellow-500 
-                                  transition-all duration-700"
+                                className="bg-yellow-500"
                                 style={{
                                   width: `${(stats.draws / Math.max(form.length, 1)) * 100}%`
                                 }}
                               />
                               <div
-                                className="bg-red-500 
-                                  transition-all duration-700"
+                                className="bg-red-500"
                                 style={{
                                   width: `${(stats.losses / Math.max(form.length, 1)) * 100}%`
                                 }}
                               />
-                            </div>
-
-                            {/* Last matches dates */}
-                            <div className="mt-3 space-y-1">
-                              {form.slice(0, 3).map(f => (
-                                <div key={f.id}
-                                  className="flex justify-between 
-                                    text-xs text-zinc-600">
-                                  <span className="truncate max-w-32">
-                                    {f.participants?.map(
-                                      p => p.name
-                                    ).join(' vs ')}
-                                  </span>
-                                  <span className="ml-2 shrink-0">
-                                    {new Date(f.starting_at)
-                                      .toLocaleDateString()}
-                                  </span>
-                                </div>
-                              ))}
                             </div>
                           </>
                         )}
@@ -618,31 +599,20 @@ export default function OddsMaster() {
                   })}
                 </div>
 
-                {/* Note about players */}
-                <div className="bg-zinc-900/30 border 
-                  border-zinc-700/50 rounded-xl p-3 
-                  flex items-center gap-2">
-                  <span className="text-yellow-500 text-sm">⚠️</span>
-                  <p className="text-xs text-zinc-500">
-                    Player/squad data requires SportMonks Standard plan. 
-                    Upgrade at sportmonks.com to unlock lineups.
-                  </p>
-                </div>
-
-                {/* Odds Inputs */}
+                {/* Odds */}
                 <div className="bg-zinc-900/50 border 
                   border-zinc-800 rounded-xl p-4">
                   <p className="text-[10px] font-bold uppercase 
                     tracking-widest text-zinc-500 mb-3">
-                    Set Odds (All 3 Outcomes)
+                    Set Odds
                   </p>
                   <div className="grid grid-cols-3 gap-3">
                     {[
-                      { label: 'Home Win', value: homeOdds, 
+                      { label: 'Home Win', value: homeOdds,
                         set: setHomeOdds },
-                      { label: 'Draw', value: drawOdds, 
+                      { label: 'Draw', value: drawOdds,
                         set: setDrawOdds },
-                      { label: 'Away Win', value: awayOdds, 
+                      { label: 'Away Win', value: awayOdds,
                         set: setAwayOdds },
                     ].map(({ label, value, set }) => (
                       <div key={label}>
@@ -653,26 +623,26 @@ export default function OddsMaster() {
                           type="number"
                           step="0.01"
                           value={value}
-                          onChange={e => 
+                          onChange={e =>
                             set(parseFloat(e.target.value) || 0)
                           }
-                          className="bg-zinc-950 border border-zinc-700 
-                            text-white font-mono p-2 rounded-lg w-full 
-                            text-center"
+                          className="bg-zinc-950 border 
+                            border-zinc-700 text-white font-mono 
+                            p-2 rounded-lg w-full text-center"
                         />
                       </div>
                     ))}
                   </div>
                 </div>
 
-                {/* Probability Sliders */}
+                {/* Probability */}
                 <div className="bg-zinc-900/50 border 
                   border-zinc-800 rounded-xl p-4">
                   <div className="flex justify-between 
                     items-center mb-3">
                     <p className="text-[10px] font-bold uppercase 
                       tracking-widest text-zinc-500">
-                      Your Probability Estimate
+                      Probability
                     </p>
                     <span className={`text-xs font-bold ${
                       probValid ? 'text-green-400' : 'text-red-400'
@@ -681,19 +651,19 @@ export default function OddsMaster() {
                     </span>
                   </div>
                   {[
-                    { 
+                    {
                       label: `Home — ${selectedMatch.participants?.[0]?.name}`,
                       value: homeProb,
                       set: setHomeProb,
                       color: 'accent-green-500'
                     },
-                    { 
+                    {
                       label: 'Draw',
                       value: drawProb,
                       set: setDrawProb,
                       color: 'accent-yellow-500'
                     },
-                    { 
+                    {
                       label: `Away — ${selectedMatch.participants?.[1]?.name}`,
                       value: awayProb,
                       set: setAwayProb,
@@ -713,7 +683,9 @@ export default function OddsMaster() {
                         min="1"
                         max="98"
                         value={value}
-                        onChange={e => set(parseInt(e.target.value))}
+                        onChange={e =>
+                          set(parseInt(e.target.value))
+                        }
                         className={`w-full ${color}`}
                         aria-label={label}
                       />
@@ -721,22 +693,23 @@ export default function OddsMaster() {
                   ))}
                 </div>
 
-                {/* Outcome Selector */}
+                {/* Outcome */}
                 <div className="grid grid-cols-3 gap-3">
-                  {(['home', 'draw', 'away'] as const).map(outcome => {
-                    const oOdds = outcome === 'home' 
-                      ? homeOdds : outcome === 'draw' 
+                  {(['home', 'draw', 'away'] as const).map(
+                    outcome => {
+                    const oOdds = outcome === 'home'
+                      ? homeOdds : outcome === 'draw'
                       ? drawOdds : awayOdds;
-                    const oProb = outcome === 'home' 
-                      ? homeProb : outcome === 'draw' 
+                    const oProb = outcome === 'home'
+                      ? homeProb : outcome === 'draw'
                       ? drawProb : awayProb;
                     const oVal = (oProb / 100) * oOdds - 1;
                     return (
                       <button
                         key={outcome}
                         onClick={() => setSelectedOutcome(outcome)}
-                        className={`p-3 rounded-xl border text-center 
-                          transition-all ${
+                        className={`p-3 rounded-xl border 
+                          text-center transition-all ${
                           selectedOutcome === outcome
                             ? 'border-yellow-500 bg-yellow-500/20'
                             : 'border-zinc-700 bg-zinc-950'
@@ -750,7 +723,9 @@ export default function OddsMaster() {
                           {oOdds.toFixed(2)}
                         </p>
                         <p className={`text-xs mt-1 font-bold ${
-                          oVal > 0 ? 'text-green-400' : 'text-red-400'
+                          oVal > 0
+                            ? 'text-green-400'
+                            : 'text-red-400'
                         }`}>
                           {oVal > 0 ? '+' : ''}
                           {(oVal * 100).toFixed(0)}%
@@ -765,13 +740,13 @@ export default function OddsMaster() {
                   border-zinc-800 rounded-xl p-4">
                   <p className="text-[10px] font-bold uppercase 
                     tracking-widest text-zinc-500 mb-2">
-                    Set Price / Stake ($)
+                    Stake ($)
                   </p>
                   <input
                     type="number"
                     step="0.10"
                     value={stake}
-                    onChange={e => 
+                    onChange={e =>
                       setStake(parseFloat(e.target.value) || 0)
                     }
                     className="bg-zinc-950 border border-zinc-700 
@@ -780,7 +755,7 @@ export default function OddsMaster() {
                   />
                 </div>
 
-                {/* Value Analysis Result */}
+                {/* Value */}
                 <div className={`rounded-xl p-4 border ${
                   hasValue
                     ? 'border-green-500/50 bg-green-500/10'
@@ -823,18 +798,18 @@ export default function OddsMaster() {
                   </p>
                 </div>
 
-                {/* Analysis Notes */}
+                {/* Notes */}
                 <textarea
                   value={notes}
                   onChange={e => setNotes(e.target.value)}
-                  placeholder="Analysis notes: current form, injuries, head-to-head history, weather conditions..."
+                  placeholder="Analysis notes: form, injuries, head-to-head..."
                   className="w-full bg-zinc-900/50 border 
                     border-zinc-800 text-white p-4 rounded-xl 
                     text-sm resize-none placeholder:text-zinc-600"
                   rows={3}
                 />
 
-                {/* Save Draft Button */}
+                {/* Save Button */}
                 <button
                   onClick={handleSaveDraft}
                   disabled={savingDraft || !probValid}
@@ -844,7 +819,7 @@ export default function OddsMaster() {
                     ${hasValue
                       ? 'bg-yellow-500 hover:bg-yellow-400 text-black'
                       : 'bg-zinc-800 hover:bg-zinc-700 text-white'
-                    } disabled:opacity-50 disabled:cursor-not-allowed`}
+                    } disabled:opacity-50`}
                 >
                   {savingDraft ? (
                     <span className="animate-pulse">Saving...</span>
@@ -865,14 +840,15 @@ export default function OddsMaster() {
           </div>
         </div>
 
-        {/* Drafts Preview Bar */}
+        {/* Drafts Bar */}
         {drafts.length > 0 && (
           <div className="mt-6 bg-zinc-900/50 border 
             border-yellow-500/30 rounded-2xl p-4">
-            <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center 
+              justify-between mb-3">
               <p className="text-xs font-bold uppercase 
                 tracking-widest text-yellow-500">
-                {drafts.length} Bets Queued — Ready to Dispatch
+                {drafts.length} Bets Queued
               </p>
               <p className="text-xs text-zinc-500">
                 Total Expected: $
