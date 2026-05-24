@@ -51,8 +51,8 @@ type DraftItem = {
 };
 
 export default function OddsMaster() {
-  const[tier, setTier] = useState('normal');
-  const[price, setPrice]=useState(2.50);
+  const[selectedTier,setSelectedTier] = useState('normal');
+  const[selectedPrice, setSelectedPrice]=useState(2.50);
   const [matches, setMatches] = useState<ApiMatch[]>([]);
   const [loadingMatches, setLoadingMatches] = useState(true);
   const [selectedMatch, setSelectedMatch] = useState<ApiMatch | null>(null);
@@ -74,8 +74,8 @@ export default function OddsMaster() {
   const [savingDraft, setSavingDraft] = useState(false);
 
   // New states for the Tier Selector
-  const [tier, setTier] = useState<string>('normal');
-  const [price, setPrice] = useState<number>(2.50);
+  const [selectedTier, setSelectedTier] = useState('normal');
+  const [selectedPrice, setSelectedPrice] = useState(2.50);
 
   const activeOdds = selectedOutcome === 'home' 
     ? homeOdds : selectedOutcome === 'draw' 
@@ -205,9 +205,9 @@ export default function OddsMaster() {
         away_team: awayTeam,
         status: 'draft',
         is_live: false,
-        metadata: { tier, base_price: price },
-        tier: tier,
-        daily_price: price,
+        metadata: { tier: selectedTier, base_price: selectedPrice },
+        tier: selectedTier,
+        daily_price: selectedPrice,
         
       };
 
