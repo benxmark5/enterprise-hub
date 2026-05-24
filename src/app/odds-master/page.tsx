@@ -197,19 +197,20 @@ export default function OddsMaster() {
         selectedMatch.league?.name ?? 'Unknown';
 
       const insertData = {
-        name: `${matchName} - ${selectedOutcome.toUpperCase()}`,
-        odds: activeOdds,
-        price: stake,
-        league_name: leagueName,
-        home_team: homeTeam,
-        away_team: awayTeam,
-        status: 'draft',
-        is_live: false,
-        metadata: { tier: selectedTier, base_price: selectedPrice },
-        tier: selectedTier,
-        daily_price: selectedPrice,
+  name: `${matchName} - ${selectedOutcome.toUpperCase()}`,
+  odds: activeOdds,
+  price: selectedPrice, // uses your new state name
+  league_name: leagueName,
+  home_team: homeTeam,
+  away_team: awayTeam,
+  status: 'draft',
+  is_live: false,
+  metadata: { tier: selectedTier, base_price: selectedPrice },
+  tier: selectedTier,       // uses your new state name
+  daily_price: selectedPrice // uses your new state name
+};
         
-      };
+      
 
       console.log('Inserting:', insertData);
 
