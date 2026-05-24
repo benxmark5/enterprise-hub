@@ -33,9 +33,7 @@ export default function AviatorAdminPage() {
   const [signals, setSignals] = useState<AiSignal[]>([]);
   const [dispatching, setDispatching] = useState(false);
   const [dispatched, setDispatched] = useState(false);
-  const [liveSignals, setLiveSignals] = useState
-    DispatchedSignal[]
-  >([]);
+  const [liveSignals, setLiveSignals] = useState<DispatchedSignal[]>([]);
   const [loadingLive, setLoadingLive] = useState(false);
   const [error, setError] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
