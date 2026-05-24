@@ -47,9 +47,12 @@ type DraftItem = {
   valueRating: number;
   expectedReturn: number;
   notes: string;
+  tier: string;
 };
 
 export default function OddsMaster() {
+  const[tier, setTier] = useState('normal');
+  const[price, setPrice]=useState(2.50);
   const [matches, setMatches] = useState<ApiMatch[]>([]);
   const [loadingMatches, setLoadingMatches] = useState(true);
   const [selectedMatch, setSelectedMatch] = useState<ApiMatch | null>(null);
@@ -69,6 +72,10 @@ export default function OddsMaster() {
   const [drafts, setDrafts] = useState<DraftItem[]>([]);
   const [dispatching, setDispatching] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
+
+  // New states for the Tier Selector
+  const [tier, setTier] = useState<string>('normal');
+  const [price, setPrice] = useState<number>(2.50);
 
   const activeOdds = selectedOutcome === 'home' 
     ? homeOdds : selectedOutcome === 'draw' 
@@ -164,6 +171,8 @@ export default function OddsMaster() {
     setDrawProb(25);
     setAwayProb(25);
     setSelectedOutcome('home');
+    setTier('normal');
+    setPrice(2.50);
     const homeId = match.participants?.[0]?.id;
     const awayId = match.participants?.[1]?.id;
     if (homeId && awayId) {
@@ -196,6 +205,10 @@ export default function OddsMaster() {
         away_team: awayTeam,
         status: 'draft',
         is_live: false,
+        metadata: { tier, base_price: price },
+        tier: tier,
+        daily_price: price,
+        
       };
 
       console.log('Inserting:', insertData);
@@ -225,6 +238,7 @@ export default function OddsMaster() {
         valueRating,
         expectedReturn,
         notes,
+        tier
       };
       setDrafts(prev => [...prev, draft]);
       alert(`✅ "${matchName}" saved to drafts!`);
@@ -271,6 +285,7 @@ export default function OddsMaster() {
         away_probability: d.awayProb,
         analysis_notes: d.notes,
         status: 'active',
+        tier: d.tier
       }));
 
       const { error: invError } = await supabase
@@ -735,7 +750,55 @@ export default function OddsMaster() {
                   })}
                 </div>
 
-                {/* Stake */}
+                {/* Tier Selector inserted directly before Price setting input container */}
+                {/* Tier Selector */}
+                <div style={{ marginBottom: '16px' }}>
+                  <label style={{
+                    color: '#6b7280', fontSize: '12px',
+                    fontWeight: 700, textTransform: 'uppercase',
+                    display: 'block', marginBottom: '8px'
+                  }}>
+                    Game Tier
+                  </label>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    {[
+                      { tier: 'normal', label: 'Normal', price: 2.50,
+                        color: '#6b7280' },
+                      { tier: 'big', label: 'Big Game', price: 4.30,
+                        color: '#fbbf24' },
+                      { tier: 'super', label: 'Super', price: 6.00,
+                        color: '#a78bfa' },
+                    ].map(t => (
+                      <button
+                        key={t.tier}
+                        type="button"
+                        onClick={() => {
+                          setTier(t.tier);
+                          setPrice(t.price);
+                        }}
+                        style={{
+                          flex: 1, padding: '10px 8px',
+                          borderRadius: '10px',
+                          border: tier === t.tier
+                            ? `2px solid ${t.color}`
+                            : '1px solid #1a2740',
+                          background: tier === t.tier
+                            ? `${t.color}20` : '#0a0f1a',
+                          color: tier === t.tier ? t.color : '#374151',
+                          fontWeight: 900, fontSize: '12px',
+                          cursor: 'pointer', textAlign: 'center'
+                        }}
+                      >
+                        <div>{t.label}</div>
+                        <div style={{ fontSize: '14px', marginTop: '2px' }}>
+                          ${t.price}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Stake Container */}
                 <div className="bg-zinc-900/50 border 
                   border-zinc-800 rounded-xl p-4">
                   <p className="text-[10px] font-bold uppercase 
@@ -852,20 +915,16 @@ export default function OddsMaster() {
               </p>
               <p className="text-xs text-zinc-500">
                 Total Expected: $
-                {drafts.reduce(
-                  (s, d) => s + d.expectedReturn, 0
-                ).toFixed(2)}
+                {drafts.reduce((s, d) => s + d.expectedReturn, 0).toFixed(2)}
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              {drafts.map((d, i) => (
-                <span key={i}
-                  className="text-xs bg-yellow-500/10 border 
-                    border-yellow-500/30 text-yellow-400 
-                    px-3 py-1 rounded-lg">
-                  {d.matchName} · {d.selectedOutcome.toUpperCase()} · 
-                  ${d.stake}
-                </span>
+              {drafts.map((d, idx) => (
+                <div key={idx} className="bg-zinc-950 border border-zinc-800 px-3 py-2 rounded-xl text-xs flex items-center gap-2">
+                  <span className="font-bold text-yellow-500">[{d.tier.toUpperCase()}]</span>
+                  <span className="text-white font-bold">{d.matchName}</span>
+                  <span className="text-zinc-500 font-mono">({d.selectedOutcome.toUpperCase()} @ {d.odds.toFixed(2)})</span>
+                </div>
               ))}
             </div>
           </div>
