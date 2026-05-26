@@ -3,10 +3,11 @@ import { useState, useRef } from 'react';
 import { supabase } from '@/app/supabase';
 import {
   Upload, Zap, Send, RefreshCw,
-  CheckCircle, AlertTriangle, Eye
+  CheckCircle, AlertTriangle, Eye,
+  TrendingUp
 } from 'lucide-react';
 
-type AiSignal = {
+type Signal = {
   entry_point: number;
   exit_point: number;
   confidence: number;
@@ -15,7 +16,7 @@ type AiSignal = {
   suggested_price: number;
 };
 
-type DispatchedSignal = {
+type LiveSignal = {
   id: string;
   entry_point: number;
   exit_point: number;
@@ -30,15 +31,17 @@ export default function AviatorAdminPage() {
   const [image, setImage] = useState<string | null>(null);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
-  const [signals, setSignals] = useState<AiSignal[]>([]);
+  const [signals, setSignals] = useState<Signal[]>([]);
   const [dispatching, setDispatching] = useState(false);
   const [dispatched, setDispatched] = useState(false);
-  const [liveSignals, setLiveSignals] = useState<DispatchedSignal[]>([]);
+  const [liveSignals, setLiveSignals] = useState<LiveSignal[]>([]);
   const [loadingLive, setLoadingLive] = useState(false);
   const [error, setError] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setImageFile(file);
@@ -58,87 +61,108 @@ export default function AviatorAdminPage() {
     setError('');
 
     try {
-      // Convert to base64
       const base64 = image.split(',')[1];
-      const mediaType = imageFile.type as
-        'image/jpeg' | 'image/png' | 'image/webp';
+      const mimeType = imageFile.type;
 
+      // Use Gemini Vision API
       const response = await fetch(
-        'https://api.anthropic.com/v1/messages',
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.NEXT_PUBLIC_GEMINI_API_KEY}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            model: 'claude-sonnet-4-20250514',
-            max_tokens: 1000,
-            messages: [{
-              role: 'user',
-              content: [
+            contents: [{
+              parts: [
                 {
-                  type: 'image',
-                  source: {
-                    type: 'base64',
-                    media_type: mediaType,
-                    data: base64,
+                  inline_data: {
+                    mime_type: mimeType,
+                    data: base64
                   }
                 },
                 {
-                  type: 'text',
-                  text: `You are an Aviator game pattern analyst. 
-Analyze this Aviator game pattern/history screenshot.
-Based on the multiplier patterns you can see, identify 3-5 optimal trading signals.
+                  text: `You are an expert Aviator crash game analyst.
 
-For each signal respond ONLY with valid JSON array, no other text:
+Study this Aviator round history screenshot carefully.
+Look at the multiplier values shown and identify patterns.
+
+Based on the patterns, generate 3-5 trading signals.
+
+Respond ONLY with a valid JSON array. No explanation, no markdown, no backticks:
 [
   {
-    "entry_point": 1.20,
-    "exit_point": 3.50,
-    "confidence": 78,
+    "entry_point": 1.15,
+    "exit_point": 2.80,
+    "confidence": 74,
     "risk_level": "MEDIUM",
-    "signal_notes": "Pattern shows consistent growth to 3x range",
+    "signal_notes": "Pattern shows steady climb before 3x range",
     "suggested_price": 3.00
   }
 ]
 
-Rules:
-- entry_point: between 1.01 and 2.00
-- exit_point: between 1.5 and 15.0, always higher than entry
-- confidence: 60-95
-- risk_level: LOW (exit < 2x), MEDIUM (2x-5x), HIGH (>5x)
-- signal_notes: brief analysis explanation
-- suggested_price: 3.00 for single, 10.00 for 4-pack pattern
+Rules for your analysis:
+- entry_point: must be between 1.01 and 1.80
+- exit_point: must be higher than entry, between 1.5 and 12.0
+- confidence: integer between 62 and 91
+- risk_level: "LOW" if exit < 2.5x, "MEDIUM" if 2.5x-5x, "HIGH" if above 5x
+- signal_notes: 1 sentence explaining what you see in the pattern
+- suggested_price: 3 for single signal, 5 for medium confidence, 10 for high confidence pattern
 
-Return ONLY the JSON array, no markdown, no explanation.`
+Return ONLY the JSON array, nothing else.`
                 }
               ]
-            }]
+            }],
+            generationConfig: {
+              temperature: 0.3,
+              maxOutputTokens: 800,
+            }
           })
         }
       );
 
       const data = await response.json();
-      const text = data.content?.[0]?.text || '[]';
 
-      // Clean and parse
+      if (!response.ok) {
+        throw new Error(
+          data.error?.message || 'Gemini API error'
+        );
+      }
+
+      const text = data.candidates?.[0]?.content
+        ?.parts?.[0]?.text || '[]';
+
+      // Clean and parse JSON
       const clean = text
-        .replace(/```json/g, '')
+        .replace(/```json/gi, '')
         .replace(/```/g, '')
         .trim();
 
-      const parsed: AiSignal[] = JSON.parse(clean);
+      const parsed: Signal[] = JSON.parse(clean);
+
+      if (!Array.isArray(parsed) || parsed.length === 0) {
+        throw new Error(
+          'No signals detected. Try a clearer screenshot.'
+        );
+      }
+
       setSignals(parsed);
 
-    } catch (e) {
-      setError('Analysis failed. Try a clearer screenshot.');
-      console.error(e);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg.includes('JSON')) {
+        setError(
+          'Could not read pattern clearly. Try a clearer screenshot.'
+        );
+      } else {
+        setError(msg);
+      }
     } finally {
       setAnalyzing(false);
     }
   };
 
   const updateSignal = (
-    idx: number, 
-    field: keyof AiSignal, 
+    idx: number,
+    field: keyof Signal,
     value: number | string
   ) => {
     setSignals(prev => prev.map((s, i) =>
@@ -198,7 +222,6 @@ Return ONLY the JSON array, no markdown, no explanation.`
       .eq('is_live', true)
       .order('created_at', { ascending: false })
       .limit(10);
-
     setLiveSignals(data || []);
     setLoadingLive(false);
   };
@@ -218,74 +241,74 @@ Return ONLY the JSON array, no markdown, no explanation.`
 
   return (
     <div style={{
-      minHeight: '100vh', background: '#0a0f1a',
+      minHeight: '100vh', background: '#050505',
       color: 'white', fontFamily: 'sans-serif',
       padding: '24px 16px'
     }}>
-      <div style={{ maxWidth: '900px', margin: '0 auto' }}>
+      <div style={{ maxWidth: '1000px', margin: '0 auto' }}>
 
         {/* Header */}
         <div style={{
           display: 'flex', alignItems: 'center',
-          gap: '12px', marginBottom: '28px'
+          gap: '14px', marginBottom: '32px'
         }}>
           <div style={{
-            width: '44px', height: '44px',
+            width: '48px', height: '48px',
             background: 'rgba(239,68,68,0.15)',
             border: '1px solid rgba(239,68,68,0.3)',
             borderRadius: '12px', display: 'flex',
             alignItems: 'center', justifyContent: 'center'
           }}>
-            <Zap size={22} color="#f87171" />
+            <Zap size={24} color="#f87171" />
           </div>
           <div>
             <h1 style={{
               fontWeight: 900, fontSize: '22px',
-              letterSpacing: '-0.5px'
+              letterSpacing: '-0.5px', color: 'white'
             }}>
-              Aviator AI Signal Engine
+              Aviator Signal Engine
             </h1>
             <p style={{ color: '#6b7280', fontSize: '13px' }}>
-              Upload pattern → AI analyzes → Dispatch to public
+              Upload round history → Analyze pattern → 
+              Dispatch to public (2hr window)
             </p>
           </div>
         </div>
 
+        {/* Top Grid */}
         <div style={{
           display: 'grid',
           gridTemplateColumns: '1fr 1fr',
-          gap: '20px',
-          marginBottom: '24px'
+          gap: '20px', marginBottom: '24px'
         }}>
 
-          {/* Upload Section */}
+          {/* Upload */}
           <div style={{
             background: '#0f1f33',
             border: '1px solid #1a2740',
             borderRadius: '16px', padding: '20px'
           }}>
             <p style={{
-              fontWeight: 700, fontSize: '13px',
+              fontWeight: 700, fontSize: '11px',
               textTransform: 'uppercase',
-              letterSpacing: '0.08em',
+              letterSpacing: '0.1em',
               color: '#6b7280', marginBottom: '14px'
             }}>
-              Step 1 — Upload Pattern
+              Step 1 — Upload Round History
             </p>
 
             <div
               onClick={() => fileRef.current?.click()}
               style={{
-                border: '2px dashed #1a2740',
-                borderRadius: '14px',
-                padding: '24px',
-                textAlign: 'center',
-                cursor: 'pointer',
+                border: `2px dashed ${image ? 'rgba(34,197,94,0.4)' : '#1a2740'}`,
+                borderRadius: '14px', padding: '20px',
+                textAlign: 'center', cursor: 'pointer',
                 marginBottom: '14px',
                 background: image
                   ? 'rgba(34,197,94,0.04)' : 'transparent',
-                borderColor: image
-                  ? 'rgba(34,197,94,0.3)' : '#1a2740'
+                minHeight: '160px',
+                display: 'flex', alignItems: 'center',
+                justifyContent: 'center'
               }}
             >
               {image ? (
@@ -298,21 +321,21 @@ Return ONLY the JSON array, no markdown, no explanation.`
                   }}
                 />
               ) : (
-                <>
+                <div>
                   <Upload size={32} color="#374151"
                     style={{ margin: '0 auto 10px' }} />
                   <p style={{
-                    color: '#6b7280', fontSize: '13px'
+                    color: '#6b7280', fontSize: '13px',
+                    marginBottom: '4px'
                   }}>
                     Click to upload Aviator screenshot
                   </p>
                   <p style={{
-                    color: '#374151', fontSize: '11px',
-                    marginTop: '4px'
+                    color: '#374151', fontSize: '11px'
                   }}>
-                    PNG, JPG, WebP supported
+                    Screenshot the round history numbers
                   </p>
-                </>
+                </div>
               )}
             </div>
 
@@ -323,6 +346,29 @@ Return ONLY the JSON array, no markdown, no explanation.`
               onChange={handleImageUpload}
               style={{ display: 'none' }}
             />
+
+            {image && (
+              <button
+                type="button"
+                onClick={() => {
+                  setImage(null);
+                  setImageFile(null);
+                  setSignals([]);
+                  setDispatched(false);
+                  setError('');
+                  if (fileRef.current) fileRef.current.value = '';
+                }}
+                style={{
+                  width: '100%', background: 'none',
+                  border: '1px solid #1a2740',
+                  color: '#6b7280', borderRadius: '8px',
+                  padding: '8px', fontSize: '12px',
+                  cursor: 'pointer', marginBottom: '8px'
+                }}
+              >
+                Change Screenshot
+              </button>
+            )}
 
             <button
               type="button"
@@ -336,7 +382,8 @@ Return ONLY the JSON array, no markdown, no explanation.`
                   ? '#374151' : 'white',
                 border: 'none', borderRadius: '12px',
                 padding: '14px', fontWeight: 900,
-                fontSize: '14px', cursor: !image || analyzing
+                fontSize: '14px',
+                cursor: !image || analyzing
                   ? 'not-allowed' : 'pointer',
                 display: 'flex', alignItems: 'center',
                 justifyContent: 'center', gap: '8px'
@@ -344,17 +391,38 @@ Return ONLY the JSON array, no markdown, no explanation.`
             >
               {analyzing ? (
                 <>
-                  <RefreshCw size={16}
-                    style={{ animation: 'spin 1s linear infinite' }} />
-                  AI Analyzing Pattern...
+                  <RefreshCw size={16} style={{
+                    animation: 'spin 1s linear infinite'
+                  }} />
+                  Analyzing Pattern...
                 </>
               ) : (
                 <>
-                  <Zap size={16} />
-                  Analyze With AI
+                  <TrendingUp size={16} />
+                  Analyze Pattern
                 </>
               )}
             </button>
+
+            {error && (
+              <div style={{
+                background: 'rgba(239,68,68,0.1)',
+                border: '1px solid rgba(239,68,68,0.2)',
+                borderRadius: '10px', padding: '12px',
+                marginTop: '12px',
+                display: 'flex', gap: '8px',
+                alignItems: 'flex-start'
+              }}>
+                <AlertTriangle size={14} color="#f87171"
+                  style={{ flexShrink: 0, marginTop: '1px' }} />
+                <p style={{
+                  color: '#f87171', fontSize: '12px',
+                  lineHeight: 1.5
+                }}>
+                  {error}
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Live Signals */}
@@ -368,41 +436,48 @@ Return ONLY the JSON array, no markdown, no explanation.`
               alignItems: 'center', marginBottom: '14px'
             }}>
               <p style={{
-                fontWeight: 700, fontSize: '13px',
+                fontWeight: 700, fontSize: '11px',
                 textTransform: 'uppercase',
-                letterSpacing: '0.08em', color: '#6b7280'
+                letterSpacing: '0.1em', color: '#6b7280'
               }}>
-                Live Signals
+                Currently Live
               </p>
               <button
                 type="button"
                 onClick={loadLiveSignals}
                 style={{
                   background: 'none', border: 'none',
-                  color: '#6b7280', cursor: 'pointer'
+                  color: '#6b7280', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center',
+                  gap: '5px', fontSize: '12px'
                 }}
               >
-                <RefreshCw size={14} />
+                <RefreshCw size={13} />
+                Refresh
               </button>
             </div>
 
             {liveSignals.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '20px' }}>
+              <div style={{
+                textAlign: 'center', padding: '24px 16px'
+              }}>
                 <Eye size={28} color="#374151"
-                  style={{ margin: '0 auto 8px' }} />
+                  style={{ margin: '0 auto 10px' }} />
                 <p style={{
-                  color: '#374151', fontSize: '13px'
+                  color: '#374151', fontSize: '13px',
+                  marginBottom: '12px'
                 }}>
-                  No live signals. Dispatch some!
+                  No live signals active
                 </p>
                 <button
                   type="button"
                   onClick={loadLiveSignals}
                   style={{
-                    marginTop: '10px', background: '#1a2740',
-                    border: '1px solid #243b55', color: '#9ca3af',
-                    padding: '8px 16px', borderRadius: '8px',
-                    fontSize: '12px', cursor: 'pointer'
+                    background: '#1a2740',
+                    border: '1px solid #243b55',
+                    color: '#9ca3af', padding: '8px 16px',
+                    borderRadius: '8px', fontSize: '12px',
+                    cursor: 'pointer', fontWeight: 700
                   }}
                 >
                   Load Live Signals
@@ -411,55 +486,67 @@ Return ONLY the JSON array, no markdown, no explanation.`
             ) : (
               <div style={{
                 display: 'flex', flexDirection: 'column',
-                gap: '8px', maxHeight: '280px', overflowY: 'auto'
+                gap: '8px', maxHeight: '300px',
+                overflowY: 'auto'
               }}>
                 {liveSignals.map(s => (
                   <div key={s.id} style={{
                     background: '#0a1628',
                     border: '1px solid #1a2740',
-                    borderRadius: '10px', padding: '10px 12px',
-                    display: 'flex', justifyContent: 'space-between',
-                    alignItems: 'center'
+                    borderRadius: '10px',
+                    padding: '12px 14px'
                   }}>
-                    <div>
+                    <div style={{
+                      display: 'flex', justifyContent: 'space-between',
+                      alignItems: 'flex-start', marginBottom: '6px'
+                    }}>
                       <div style={{
-                        display: 'flex', gap: '8px',
-                        alignItems: 'center', marginBottom: '3px'
+                        display: 'flex', alignItems: 'center',
+                        gap: '10px'
                       }}>
-                        <span style={{
-                          color: '#22c55e', fontWeight: 900,
-                          fontSize: '14px', fontFamily: 'monospace'
-                        }}>
-                          {s.entry_point}x
-                        </span>
-                        <span style={{ color: '#374151' }}>→</span>
-                        <span style={{
-                          color: '#f87171', fontWeight: 900,
-                          fontSize: '14px', fontFamily: 'monospace'
-                        }}>
-                          {s.exit_point}x
-                        </span>
+                        <div>
+                          <span style={{
+                            color: '#22c55e', fontWeight: 900,
+                            fontSize: '15px', fontFamily: 'monospace'
+                          }}>
+                            {s.entry_point}x
+                          </span>
+                          <span style={{
+                            color: '#374151', margin: '0 6px'
+                          }}>
+                            →
+                          </span>
+                          <span style={{
+                            color: '#f87171', fontWeight: 900,
+                            fontSize: '15px', fontFamily: 'monospace'
+                          }}>
+                            {s.exit_point}x
+                          </span>
+                        </div>
                       </div>
-                      <p style={{
-                        color: '#6b7280', fontSize: '10px'
-                      }}>
-                        Expires:{' '}
-                        {new Date(s.expires_at).toLocaleTimeString()}
-                      </p>
+                      <button
+                        type="button"
+                        onClick={() => expireSignal(s.id)}
+                        style={{
+                          background: 'rgba(239,68,68,0.1)',
+                          border: '1px solid rgba(239,68,68,0.2)',
+                          color: '#f87171', padding: '3px 10px',
+                          borderRadius: '6px', fontSize: '11px',
+                          fontWeight: 700, cursor: 'pointer'
+                        }}
+                      >
+                        Expire
+                      </button>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => expireSignal(s.id)}
-                      style={{
-                        background: 'rgba(239,68,68,0.1)',
-                        border: '1px solid rgba(239,68,68,0.2)',
-                        color: '#f87171', padding: '5px 10px',
-                        borderRadius: '6px', fontSize: '11px',
-                        fontWeight: 700, cursor: 'pointer'
-                      }}
-                    >
-                      Expire
-                    </button>
+                    <p style={{
+                      color: '#6b7280', fontSize: '10px'
+                    }}>
+                      Expires:{' '}
+                      {new Date(s.expires_at).toLocaleTimeString(
+                        [], { hour: '2-digit', minute: '2-digit' }
+                      )}
+                      {' '}· Confidence: {s.confidence}%
+                    </p>
                   </div>
                 ))}
               </div>
@@ -467,99 +554,111 @@ Return ONLY the JSON array, no markdown, no explanation.`
           </div>
         </div>
 
-        {/* AI Generated Signals */}
+        {/* Generated Signals */}
         {signals.length > 0 && (
           <div style={{
             background: '#0f1f33',
             border: '1px solid #1a2740',
-            borderRadius: '16px', padding: '20px',
-            marginBottom: '20px'
+            borderRadius: '16px', padding: '20px'
           }}>
             <div style={{
               display: 'flex', justifyContent: 'space-between',
-              alignItems: 'center', marginBottom: '16px'
+              alignItems: 'center', marginBottom: '18px'
             }}>
-              <p style={{
-                fontWeight: 700, fontSize: '13px',
-                textTransform: 'uppercase',
-                letterSpacing: '0.08em', color: '#6b7280'
-              }}>
-                Step 2 — Review AI Signals
-                ({signals.length} detected)
-              </p>
+              <div>
+                <p style={{
+                  fontWeight: 700, fontSize: '11px',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.1em', color: '#6b7280',
+                  marginBottom: '4px'
+                }}>
+                  Step 2 — Review & Adjust Signals
+                </p>
+                <p style={{
+                  color: '#9ca3af', fontSize: '13px',
+                  fontWeight: 700
+                }}>
+                  {signals.length} signals detected from pattern
+                </p>
+              </div>
               {dispatched && (
                 <span style={{
                   background: 'rgba(34,197,94,0.15)',
                   color: '#22c55e', fontSize: '12px',
-                  fontWeight: 700, padding: '4px 12px',
+                  fontWeight: 700, padding: '6px 14px',
                   borderRadius: '20px',
-                  display: 'flex', alignItems: 'center',
-                  gap: '5px'
+                  display: 'flex', alignItems: 'center', gap: '6px'
                 }}>
-                  <CheckCircle size={12} /> Dispatched!
+                  <CheckCircle size={14} />
+                  Dispatched — 2hr window active
                 </span>
               )}
             </div>
 
             <div style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
-              gap: '12px', marginBottom: '16px'
+              gridTemplateColumns:
+                'repeat(auto-fill, minmax(240px, 1fr))',
+              gap: '12px', marginBottom: '20px'
             }}>
               {signals.map((signal, idx) => (
                 <div key={idx} style={{
                   background: '#0a1628',
-                  border: `1px solid ${getRiskColor(signal.risk_level)}40`,
+                  border: `1px solid ${getRiskColor(signal.risk_level)}30`,
                   borderRadius: '14px', padding: '16px'
                 }}>
+                  {/* Risk badge */}
                   <div style={{
                     display: 'flex', justifyContent: 'space-between',
-                    marginBottom: '12px'
+                    alignItems: 'center', marginBottom: '14px'
                   }}>
                     <span style={{
-                      fontSize: '11px', fontWeight: 900,
+                      fontSize: '10px', fontWeight: 900,
                       textTransform: 'uppercase',
                       color: getRiskColor(signal.risk_level),
-                      background: `${getRiskColor(signal.risk_level)}20`,
-                      padding: '3px 8px', borderRadius: '20px'
+                      background:
+                        `${getRiskColor(signal.risk_level)}15`,
+                      padding: '3px 10px', borderRadius: '20px',
+                      letterSpacing: '0.05em'
                     }}>
                       {signal.risk_level} RISK
                     </span>
                     <span style={{
-                      color: '#6b7280', fontSize: '12px',
+                      color: '#374151', fontSize: '11px',
                       fontWeight: 700
                     }}>
                       #{idx + 1}
                     </span>
                   </div>
 
-                  {/* Entry/Exit inputs */}
+                  {/* Entry/Exit */}
                   <div style={{
                     display: 'grid',
                     gridTemplateColumns: '1fr 1fr',
-                    gap: '8px', marginBottom: '10px'
+                    gap: '8px', marginBottom: '12px'
                   }}>
                     <div>
                       <label style={{
                         color: '#6b7280', fontSize: '10px',
                         textTransform: 'uppercase',
-                        display: 'block', marginBottom: '4px'
+                        display: 'block', marginBottom: '5px',
+                        letterSpacing: '0.05em'
                       }}>
-                        Entry
+                        🟢 Entry
                       </label>
                       <input
                         type="number"
                         value={signal.entry_point}
                         onChange={e => updateSignal(
                           idx, 'entry_point',
-                          parseFloat(e.target.value)
+                          parseFloat(e.target.value) || 1.01
                         )}
-                        step="0.01"
+                        step="0.01" min="1.01" max="2.00"
                         style={{
                           width: '100%', background: '#0f1f33',
-                          border: '1px solid #22c55e40',
+                          border: '1px solid rgba(34,197,94,0.3)',
                           borderRadius: '8px', padding: '8px',
-                          color: '#22c55e', fontSize: '15px',
+                          color: '#22c55e', fontSize: '16px',
                           fontWeight: 900, fontFamily: 'monospace',
                           outline: 'none',
                           boxSizing: 'border-box'
@@ -570,23 +669,24 @@ Return ONLY the JSON array, no markdown, no explanation.`
                       <label style={{
                         color: '#6b7280', fontSize: '10px',
                         textTransform: 'uppercase',
-                        display: 'block', marginBottom: '4px'
+                        display: 'block', marginBottom: '5px',
+                        letterSpacing: '0.05em'
                       }}>
-                        Exit
+                        🔴 Exit
                       </label>
                       <input
                         type="number"
                         value={signal.exit_point}
                         onChange={e => updateSignal(
                           idx, 'exit_point',
-                          parseFloat(e.target.value)
+                          parseFloat(e.target.value) || 1.50
                         )}
-                        step="0.01"
+                        step="0.01" min="1.50"
                         style={{
                           width: '100%', background: '#0f1f33',
-                          border: '1px solid #f8717140',
+                          border: '1px solid rgba(239,68,68,0.3)',
                           borderRadius: '8px', padding: '8px',
-                          color: '#f87171', fontSize: '15px',
+                          color: '#f87171', fontSize: '16px',
                           fontWeight: 900, fontFamily: 'monospace',
                           outline: 'none',
                           boxSizing: 'border-box'
@@ -596,10 +696,10 @@ Return ONLY the JSON array, no markdown, no explanation.`
                   </div>
 
                   {/* Confidence */}
-                  <div style={{ marginBottom: '10px' }}>
+                  <div style={{ marginBottom: '12px' }}>
                     <div style={{
                       display: 'flex', justifyContent: 'space-between',
-                      marginBottom: '4px'
+                      marginBottom: '5px'
                     }}>
                       <label style={{
                         color: '#6b7280', fontSize: '10px',
@@ -608,33 +708,42 @@ Return ONLY the JSON array, no markdown, no explanation.`
                         Confidence
                       </label>
                       <span style={{
-                        color: '#fbbf24', fontSize: '12px',
-                        fontWeight: 900
+                        color: signal.confidence >= 75
+                          ? '#22c55e' : '#fbbf24',
+                        fontSize: '12px', fontWeight: 900
                       }}>
                         {signal.confidence}%
                       </span>
                     </div>
                     <input
-                      type="range"
-                      min="50" max="95"
+                      type="range" min="50" max="95"
                       value={signal.confidence}
                       onChange={e => updateSignal(
-                        idx, 'confidence', parseInt(e.target.value)
+                        idx, 'confidence',
+                        parseInt(e.target.value)
                       )}
-                      style={{ width: '100%', accentColor: '#fbbf24' }}
+                      style={{
+                        width: '100%',
+                        accentColor: signal.confidence >= 75
+                          ? '#22c55e' : '#fbbf24'
+                      }}
                     />
                   </div>
 
-                  {/* Price */}
-                  <div style={{ marginBottom: '10px' }}>
+                  {/* Price buttons */}
+                  <div style={{ marginBottom: '12px' }}>
                     <label style={{
                       color: '#6b7280', fontSize: '10px',
                       textTransform: 'uppercase',
-                      display: 'block', marginBottom: '4px'
+                      display: 'block', marginBottom: '6px'
                     }}>
-                      Price ($)
+                      Price
                     </label>
-                    <div style={{ display: 'flex', gap: '6px' }}>
+                    <div style={{
+                      display: 'grid',
+                      gridTemplateColumns: '1fr 1fr 1fr',
+                      gap: '5px'
+                    }}>
                       {[3, 5, 10].map(p => (
                         <button
                           key={p}
@@ -643,7 +752,7 @@ Return ONLY the JSON array, no markdown, no explanation.`
                             idx, 'suggested_price', p
                           )}
                           style={{
-                            flex: 1, padding: '7px',
+                            padding: '7px 4px',
                             borderRadius: '8px',
                             border: signal.suggested_price === p
                               ? '2px solid #22c55e'
@@ -652,7 +761,7 @@ Return ONLY the JSON array, no markdown, no explanation.`
                               ? 'rgba(34,197,94,0.15)' : '#0f1f33',
                             color: signal.suggested_price === p
                               ? '#22c55e' : '#6b7280',
-                            fontWeight: 900, fontSize: '12px',
+                            fontWeight: 900, fontSize: '13px',
                             cursor: 'pointer'
                           }}
                         >
@@ -665,28 +774,15 @@ Return ONLY the JSON array, no markdown, no explanation.`
                   {/* Notes */}
                   <p style={{
                     color: '#6b7280', fontSize: '11px',
-                    lineHeight: 1.5, fontStyle: 'italic'
+                    lineHeight: 1.6, fontStyle: 'italic',
+                    borderTop: '1px solid #1a2740',
+                    paddingTop: '10px'
                   }}>
                     {signal.signal_notes}
                   </p>
                 </div>
               ))}
             </div>
-
-            {error && (
-              <div style={{
-                background: 'rgba(239,68,68,0.1)',
-                border: '1px solid rgba(239,68,68,0.2)',
-                borderRadius: '10px', padding: '12px',
-                marginBottom: '14px',
-                display: 'flex', gap: '8px', alignItems: 'center'
-              }}>
-                <AlertTriangle size={16} color="#f87171" />
-                <p style={{ color: '#f87171', fontSize: '13px' }}>
-                  {error}
-                </p>
-              </div>
-            )}
 
             {/* Dispatch Button */}
             <button
@@ -696,11 +792,10 @@ Return ONLY the JSON array, no markdown, no explanation.`
               style={{
                 width: '100%',
                 background: dispatched
-                  ? 'rgba(34,197,94,0.15)'
+                  ? 'rgba(34,197,94,0.1)'
                   : dispatching
                   ? '#1a2740' : '#ef4444',
-                color: dispatched
-                  ? '#22c55e'
+                color: dispatched ? '#22c55e'
                   : dispatching ? '#374151' : 'white',
                 border: dispatched
                   ? '1px solid rgba(34,197,94,0.3)' : 'none',
@@ -712,35 +807,38 @@ Return ONLY the JSON array, no markdown, no explanation.`
                 justifyContent: 'center', gap: '10px',
                 boxShadow: dispatching || dispatched
                   ? 'none'
-                  : '0 6px 20px rgba(239,68,68,0.3)'
+                  : '0 6px 20px rgba(239,68,68,0.25)'
               }}
             >
               {dispatched ? (
                 <>
                   <CheckCircle size={20} />
-                  Dispatched to Public — Expires in 2 Hours
+                  ✅ Dispatched — Signals live for 2 hours
                 </>
               ) : dispatching ? (
                 <>
-                  <RefreshCw size={18}
-                    style={{ animation: 'spin 1s linear infinite' }} />
+                  <RefreshCw size={18} style={{
+                    animation: 'spin 1s linear infinite'
+                  }} />
                   Dispatching {signals.length} signals...
                 </>
               ) : (
                 <>
                   <Send size={18} />
                   Dispatch {signals.length} Signals to Public
-                  (2hr window)
+                  (Active for 2hrs)
                 </>
               )}
             </button>
 
-            <p style={{
-              textAlign: 'center', color: '#374151',
-              fontSize: '12px', marginTop: '10px'
-            }}>
-              Signals will auto-expire 2 hours after dispatch
-            </p>
+            {!dispatched && (
+              <p style={{
+                textAlign: 'center', color: '#374151',
+                fontSize: '12px', marginTop: '10px'
+              }}>
+                Signals expire automatically after 2 hours
+              </p>
+            )}
           </div>
         )}
 
