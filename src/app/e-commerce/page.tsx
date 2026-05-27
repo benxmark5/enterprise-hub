@@ -11,12 +11,13 @@ import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
 
 export default function InventoryCMD() {
-  const { 
-    realInventory, 
-    totalExpectedReturn, 
-    totalStaked,
-    refreshInventory 
-  } = useSystem()!;
+  const system = useSystem();
+
+  // Safely grab variables or provide fallbacks if context isn't fully loaded yet
+  const realInventory = system?.realInventory || [];
+  const totalExpectedReturn = system?.totalExpectedReturn || 0;
+  const totalStaked = system?.totalStaked || 0;
+  const refreshInventory = system?.refreshInventory || (() => {});
 
   const [theme, setTheme] = useState('DARK');
   const [filter, setFilter] = useState('ALL');
@@ -26,9 +27,10 @@ export default function InventoryCMD() {
     ? ((totalProfit / totalStaked) * 100).toFixed(1) 
     : '0.0';
 
+  // Build-safe filtering
   const filtered = filter === 'ALL' 
     ? realInventory 
-    : realInventory.filter(i => i.status === filter.toLowerCase());
+    : realInventory.filter(i => i?.status === filter.toLowerCase());
 
   const handleDelete = async (id: string) => {
     if (!confirm('Remove this entry?')) return;
@@ -37,6 +39,7 @@ export default function InventoryCMD() {
   };
 
   const exportCSV = () => {
+    if (realInventory.length === 0) return;
     const headers = [
       'Match', 'League', 'Odds', 
       'Stake', 'Expected Return', 'Value Rating', 
@@ -67,16 +70,12 @@ export default function InventoryCMD() {
       <div className="max-w-7xl mx-auto p-6 lg:p-10">
 
         {/* Header */}
-        <header className="flex flex-col md:flex-row justify-between 
-          items-start md:items-center mb-12 gap-6">
+        <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-12 gap-6">
           <div>
-            <Link href="/" className="flex items-center text-zinc-500 
-              hover:text-blue-500 mb-4 transition-colors text-[10px] 
-              font-bold tracking-widest uppercase">
+            <Link href="/" className="flex items-center text-zinc-500 hover:text-blue-500 mb-4 transition-colors text-[10px] font-bold tracking-widest uppercase">
               <ArrowLeft size={14} className="mr-2" /> Return to Hub
             </Link>
-            <div className="flex items-center gap-2 mb-2 text-blue-500 
-              font-bold tracking-tighter uppercase text-xs">
+            <div className="flex items-center gap-2 mb-2 text-blue-500 font-bold tracking-tighter uppercase text-xs">
               <ShieldCheck size={14} /> 
               Inventory CMD // {new Date().toLocaleDateString()}
             </div>
@@ -87,23 +86,19 @@ export default function InventoryCMD() {
           <div className="flex items-center gap-3">
             <button 
               onClick={refreshInventory}
-              className="p-3 rounded-lg border bg-zinc-900 
-                border-zinc-800 text-blue-400 hover:text-blue-300"
+              className="p-3 rounded-lg border bg-zinc-900 border-zinc-800 text-blue-400 hover:text-blue-300"
             >
               <RefreshCw size={20} />
             </button>
             <button 
               onClick={() => setTheme(t => t === 'DARK' ? 'LIGHT' : 'DARK')} 
-              className="p-3 rounded-lg border bg-zinc-900 
-                border-zinc-800 text-yellow-500"
+              className="p-3 rounded-lg border bg-zinc-900 border-zinc-800 text-yellow-500"
             >
               {theme === 'DARK' ? <Sun size={20} /> : <Moon size={20} />}
             </button>
             <button 
               onClick={exportCSV}
-              className="flex items-center gap-2 bg-blue-600 
-                hover:bg-blue-500 text-white px-6 py-3 rounded-lg 
-                text-sm font-bold"
+              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-lg text-sm font-bold"
             >
               <Download size={18} /> Export CSV
             </button>
@@ -134,11 +129,8 @@ export default function InventoryCMD() {
               color: parseFloat(roi) > 0 ? 'text-green-400' : 'text-red-400' 
             },
           ].map(stat => (
-            <div key={stat.label} 
-              className="bg-zinc-900/50 border border-zinc-800 
-                rounded-xl p-4">
-              <p className="text-xs text-zinc-500 uppercase 
-                tracking-widest mb-1">{stat.label}</p>
+            <div key={stat.label} className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-4">
+              <p className="text-xs text-zinc-500 uppercase tracking-widest mb-1">{stat.label}</p>
               <p className={`text-2xl font-black font-mono ${stat.color}`}>
                 {stat.value}
               </p>
@@ -152,8 +144,7 @@ export default function InventoryCMD() {
             <button
               key={f}
               onClick={() => setFilter(f)}
-              className={`px-4 py-2 text-[10px] font-bold rounded-lg 
-                uppercase tracking-widest transition-all ${
+              className={`px-4 py-2 text-[10px] font-bold rounded-lg uppercase tracking-widest transition-all ${
                 filter === f 
                   ? 'bg-blue-600 text-white' 
                   : 'bg-zinc-900 text-zinc-500 hover:text-white'
@@ -165,10 +156,8 @@ export default function InventoryCMD() {
         </div>
 
         {/* Inventory Table */}
-        <div className="bg-zinc-900/50 border border-zinc-800 
-          rounded-2xl overflow-hidden">
-          <div className="p-6 border-b border-zinc-800 flex 
-            items-center gap-2">
+        <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl overflow-hidden">
+          <div className="p-6 border-b border-zinc-800 flex items-center gap-2">
             <Activity size={16} className="text-blue-500" />
             <h3 className="text-sm font-bold uppercase tracking-widest">
               Dispatched Bets — {filtered.length} entries
@@ -185,21 +174,16 @@ export default function InventoryCMD() {
               </div>
             ) : (
               filtered.map((item) => (
-                <div key={item.id} 
-                  className="p-6 hover:bg-zinc-800/30 
-                    transition-all group">
-                  <div className="flex flex-col md:flex-row 
-                    md:items-center justify-between gap-4">
+                <div key={item.id} className="p-6 hover:bg-zinc-800/30 transition-all group">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
 
                     {/* Match Info */}
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-1">
-                        <span className="text-[10px] text-blue-400 
-                          font-bold uppercase">
+                        <span className="text-[10px] text-blue-400 font-bold uppercase">
                           {item.league_name}
                         </span>
-                        <span className={`text-[10px] font-bold px-2 
-                          py-0.5 rounded uppercase ${
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase ${
                           item.status === 'active' 
                             ? 'bg-green-500/20 text-green-400'
                             : item.status === 'live' 
@@ -214,8 +198,7 @@ export default function InventoryCMD() {
                       </p>
                       {item.analysis_notes && (
                         <div className="flex items-start gap-1 mt-1">
-                          <FileText size={10} 
-                            className="text-zinc-500 mt-0.5" />
+                          <FileText size={10} className="text-zinc-500 mt-0.5" />
                           <p className="text-xs text-zinc-500 italic">
                             {item.analysis_notes}
                           </p>
@@ -228,34 +211,30 @@ export default function InventoryCMD() {
                       <div>
                         <p className="text-zinc-500 text-xs">Odds</p>
                         <p className="text-white font-bold">
-                          {item.odds?.toFixed(2)}
+                          {item.odds?.toFixed(2) || "0.00"}
                         </p>
                       </div>
                       <div>
                         <p className="text-zinc-500 text-xs">Stake</p>
                         <p className="text-yellow-400 font-bold">
-                          ${item.stake?.toFixed(2)}
+                          ${item.stake?.toFixed(2) || "0.00"}
                         </p>
                       </div>
                       <div>
                         <p className="text-zinc-500 text-xs">Returns</p>
                         <p className="text-green-400 font-bold">
-                          ${item.expected_return?.toFixed(2)}
+                          ${item.expected_return?.toFixed(2) || "0.00"}
                         </p>
                       </div>
                       <div>
                         <p className="text-zinc-500 text-xs">Value</p>
                         <div className="flex items-center gap-1">
                           {(item.value_rating || 0) > 0 
-                            ? <TrendingUp size={14} 
-                                className="text-green-400" /> 
-                            : <TrendingDown size={14} 
-                                className="text-red-400" />
+                            ? <TrendingUp size={14} className="text-green-400" /> 
+                            : <TrendingDown size={14} className="text-red-400" />
                           }
                           <p className={`font-bold ${
-                            (item.value_rating || 0) > 0 
-                              ? 'text-green-400' 
-                              : 'text-red-400'
+                            (item.value_rating || 0) > 0 ? 'text-green-400' : 'text-red-400'
                           }`}>
                             {((item.value_rating || 0) * 100).toFixed(1)}%
                           </p>
@@ -264,8 +243,7 @@ export default function InventoryCMD() {
                       <div>
                         <p className="text-zinc-500 text-xs">Date</p>
                         <p className="text-zinc-300 text-xs">
-                          {new Date(item.created_at)
-                            .toLocaleDateString()}
+                          {item.created_at ? new Date(item.created_at).toLocaleDateString() : 'N/A'}
                         </p>
                       </div>
                     </div>
@@ -273,8 +251,7 @@ export default function InventoryCMD() {
                     {/* Delete */}
                     <button
                       onClick={() => handleDelete(item.id)}
-                      className="opacity-0 group-hover:opacity-100 
-                        p-2 text-zinc-600 hover:text-red-500 transition-all"
+                      className="opacity-0 group-hover:opacity-100 p-2 text-zinc-600 hover:text-red-500 transition-all"
                       aria-label="Delete entry"
                     >
                       <Trash2 size={18} />
