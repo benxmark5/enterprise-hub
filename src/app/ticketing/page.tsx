@@ -8,7 +8,6 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { supabase } from '@/app/supabase';
-import { useSystem } from '../context/systemcontext';
 
 type Market = {
   id: string;
@@ -27,7 +26,6 @@ export default function TicketingGate() {
   const [markets, setMarkets] = useState<Market[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('ALL');
-  const { addRevenue } = useSystem()!;
 
   // Stats
   const totalMarkets = markets.length;
@@ -74,7 +72,7 @@ export default function TicketingGate() {
     }
   };
 
-  // Mark as Sold — records revenue
+  // Mark as Sold — records revenue locally
   const handleMarkSold = async (market: Market) => {
     if (!confirm(
       `Mark "${market.home_team} vs ${market.away_team}" as SOLD?\n` +
@@ -89,16 +87,13 @@ export default function TicketingGate() {
 
       if (error) throw error;
 
-      // Add to global revenue
-      addRevenue(
-        market.price * market.odds,
-        `${market.home_team} vs ${market.away_team}`
-      );
+      const calculatedRevenue = market.price * market.odds;
+      console.log(`Revenue saved locally: $${calculatedRevenue} for ${market.home_team} vs ${market.away_team}`);
 
       await fetchMarkets();
       alert(
         `💰 Sold!\n` +
-        `Revenue: $${(market.price * market.odds).toFixed(2)} recorded`
+        `Revenue: $${calculatedRevenue.toFixed(2)} recorded`
       );
     } catch (e) {
       alert('Error: ' + String(e));
@@ -389,7 +384,7 @@ export default function TicketingGate() {
                           Potential
                         </p>
                         <p className="text-green-400 font-bold">
-                          ${(market.odds * market.price)?.toFixed(2)}
+                           ${(market.odds * market.price)?.toFixed(2)}
                         </p>
                       </div>
                     </div>

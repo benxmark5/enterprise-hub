@@ -51,7 +51,6 @@ type DraftItem = {
 };
 
 export default function OddsMaster() {
-  // ── Single declarations — no duplicates ──
   const [selectedTier, setSelectedTier] = useState('normal');
   const [selectedPrice, setSelectedPrice] = useState(2.50);
   const [matches, setMatches] = useState<ApiMatch[]>([]);
@@ -66,8 +65,7 @@ export default function OddsMaster() {
   const [homeProb, setHomeProb] = useState(50);
   const [drawProb, setDrawProb] = useState(25);
   const [awayProb, setAwayProb] = useState(25);
-  const [selectedOutcome, setSelectedOutcome] = 
-    useState<'home' | 'draw' | 'away'>('home');
+  const [selectedOutcome, setSelectedOutcome] = useState<'home' | 'draw' | 'away'>('home');
   const [stake, setStake] = useState(10);
   const [notes, setNotes] = useState('');
   const [drafts, setDrafts] = useState<DraftItem[]>([]);
@@ -91,10 +89,18 @@ export default function OddsMaster() {
     try {
       const res = await fetch('/api/fixtures');
       const text = await res.text();
-      const data = text ? JSON.parse(text) : {};
+      
+      let data: any = {};
+      if (text && !text.trim().startsWith('<!DOCTYPE')) {
+        data = JSON.parse(text);
+      } else {
+        console.warn("⚠️ /api/fixtures didn't return valid JSON data. Verify endpoint path or backend handler.");
+      }
+      
       setMatches(data.data || []);
     } catch (e) {
       console.error('Fixtures error:', e);
+      setMatches([]);
     } finally {
       setLoadingMatches(false);
     }
@@ -113,12 +119,28 @@ export default function OddsMaster() {
       ]);
       const homeText = await homeRes.text();
       const awayText = await awayRes.text();
-      const homeData = homeText ? JSON.parse(homeText) : {};
-      const awayData = awayText ? JSON.parse(awayText) : {};
+      
+      let homeData: any = {};
+      let awayData: any = {};
+
+      if (homeText && !homeText.trim().startsWith('<!DOCTYPE')) {
+        homeData = JSON.parse(homeText);
+      } else {
+        console.warn(`⚠️ Team Form API for homeId ${homeId} returned HTML instead of JSON.`);
+      }
+
+      if (awayText && !awayText.trim().startsWith('<!DOCTYPE')) {
+        awayData = JSON.parse(awayText);
+      } else {
+        console.warn(`⚠️ Team Form API for awayId ${awayId} returned HTML instead of JSON.`);
+      }
+
       setHomeForm(homeData.data || []);
       setAwayForm(awayData.data || []);
     } catch (e) {
       console.error('Form error:', e);
+      setHomeForm([]);
+      setAwayForm([]);
     } finally {
       setLoadingForm(false);
     }
@@ -585,6 +607,7 @@ export default function OddsMaster() {
                     return (
                       <button
                         key={outcome}
+                        type="button"
                         onClick={() => setSelectedOutcome(outcome)}
                         className={`p-3 rounded-xl border text-center transition-all ${
                           selectedOutcome === outcome
@@ -689,6 +712,7 @@ export default function OddsMaster() {
 
                 {/* Save Button */}
                 <button
+                  type="button"
                   onClick={handleSaveDraft}
                   disabled={savingDraft || !probValid}
                   className={`w-full py-4 rounded-xl font-black uppercase tracking-wider flex items-center justify-center gap-3 transition-all text-sm

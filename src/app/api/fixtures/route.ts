@@ -1,92 +1,61 @@
+import { NextResponse } from "next/server";
+
+const ODDS_API_KEY = process.env.ODDS_API_KEY; 
+
 export async function GET() {
   try {
-    const today = new Date().toISOString().split('T')[0];
-
-    // TheSportsDB - completely free, no key needed
-    const leagues = [
-      { id: '4328', name: 'English Premier League' },
-      { id: '4335', name: 'SpanishLa Liga' },
-      { id: '4332', name: 'German Bundesliga' },
-      { id: '4331', name: 'Italian Serie A' },
-      { id: '4334', name: 'French Ligue 1' },
-      { id: `4480`, name: 'UEFA Champions League' },
-    ];
-
-    let allFixtures: object[] = [];
-
-    for (const league of leagues) {
-      try {
-        const url = `https://www.thesportsdb.com/api/v1/json/3/eventsday.php?d=${today}&l=${league.id}`;
-        
-        console.log(`Fetching ${league.name}:`, url);
-        
-        const res = await fetch(url);
-        const text = await res.text();
-        console.log(`${league.name} RAW:`, text.substring(0, 200));
-        
-        const raw = JSON.parse(text);
-        const events = (raw.events || []).map((item: {
-          idEvent: string;
-          dateEvent: string;
-          strTime: string;
-          strHomeTeam: string;
-          idHomeTeam: string;
-          strAwayTeam: string;
-          idAwayTeam: string;
-          strLeague: string;
-          idLeague: string;
-          strStatus: string;
-          intHomeScore: string | null;
-          intAwayScore: string | null;
-        }) => ({
-          id: parseInt(item.idEvent),
-          starting_at: `${item.dateEvent}T${item.strTime || '00:00:00'}`,
-          status: item.strStatus || 'NS',
-          league: {
-            id: parseInt(item.idLeague),
-            name: item.strLeague,
-            country: '',
-          },
-          participants: [
-            {
-              id: parseInt(item.idHomeTeam),
-              name: item.strHomeTeam,
-              meta: { location: 'home' },
-            },
-            {
-              id: parseInt(item.idAwayTeam),
-              name: item.strAwayTeam,
-              meta: { location: 'away' },
-            },
-          ],
-          goals: {
-            home: item.intHomeScore 
-              ? parseInt(item.intHomeScore) : null,
-            away: item.intAwayScore 
-              ? parseInt(item.intAwayScore) : null,
-          },
-        }));
-
-        allFixtures = [...allFixtures, ...events];
-        console.log(`${league.name}: ${events.length} fixtures`);
-
-      } catch (e) {
-        console.error(`Failed ${league.name}:`, e);
-      }
+    if (!ODDS_API_KEY) {
+      console.error("❌ SETUP ERROR: Missing ODDS_API_KEY in your .env.local file!");
+      return NextResponse.json([]); // Return safe empty array to prevent client crashes
     }
 
-    console.log(`Total fixtures: ${allFixtures.length}`);
+    const response = await fetch(
+      `https://api.the-odds-api.com/v4/sports/soccer/odds/?apiKey=${ODDS_API_KEY}&regions=eu,us,uk&markets=h2h`
+    );
 
-    return Response.json({
-      data: allFixtures,
-      total: allFixtures.length,
+    if (!response.ok) {
+      console.error(`❌ THE ODDS API ERROR (Status ${response.status})`);
+      return NextResponse.json([]); 
+    }
+
+    const liveData = await response.json();
+
+    if (!Array.isArray(liveData)) {
+      return NextResponse.json([]);
+    }
+
+    const formattedFixtures = liveData.map((match: any) => {
+      const firstBookmaker = match.bookmakers?.[0];
+      const h2hMarket = firstBookmaker?.markets?.find((m: any) => m.key === 'h2h');
+      
+      const homeOdds = h2hMarket?.outcomes?.find((o: any) => o.name === match.home_team)?.price || null;
+      const awayOdds = h2hMarket?.outcomes?.find((o: any) => o.name === match.away_team)?.price || null;
+      const drawOdds = h2hMarket?.outcomes?.find((o: any) => o.name === 'Draw')?.price || null;
+
+      const leagueName = match.sport_title || "Soccer";
+
+      return {
+        id: match.id,
+        homeTeam: match.home_team,
+        awayTeam: match.away_team,
+        date: match.commence_time ? match.commence_time.split('T')[0] : '',
+        time: match.commence_time ? match.commence_time.split('T')[1].substring(0, 5) : '',
+        odds: { home: homeOdds, draw: drawOdds, away: awayOdds },
+        source: firstBookmaker?.title || "Global Aggregate",
+        
+        // Match all fallback keys so that the "UNKNOWN" label disappears
+        sport: leagueName,
+        league: leagueName,
+        category: leagueName,
+        competition: leagueName
+      };
     });
 
-  } catch (error) {
-    console.error('Error:', error);
-    return Response.json(
-      { error: 'Failed', details: String(error) },
-      { status: 500 }
-    );
+    // 👇 Change: Return the flat array directly to the client dashboard layout
+    return NextResponse.json(formattedFixtures);
+
+  } catch (error: any) {
+    console.error("❌ CRITICAL API ROUTE ERROR:", error);
+    return NextResponse.json([]);
   }
 }
