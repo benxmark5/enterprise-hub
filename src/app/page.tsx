@@ -38,55 +38,45 @@ export default function AdminDashboard() {
     setLoading(true);
     const today = new Date().toISOString().split('T')[0];
 
-    const [
-      { data: purchases },
-      { data: profiles },
-      { data: markets },
-    ] = await Promise.all([
-      supabase.from('purchases').select('*')
-        .order('created_at', { ascending: false }),
-      supabase.auth.admin.listUsers(),
-      supabase.from('markets').select('*').eq('is_live', true),
-    ]);
+    try {
+      const [
+        { data: purchases },
+        { data: profiles },
+        { data: markets },
+      ] = await Promise.all([
+        supabase.from('purchases').select('*').order('created_at', { ascending: false }),
+        supabase.auth.admin.listUsers(),
+        supabase.from('markets').select('*').eq('is_live', true),
+      ]);
 
-    const allPurchases = purchases || [];
-    const completed = allPurchases.filter(
-      p => p.status === 'completed'
-    );
-    const todayP = completed.filter(
-      p => p.created_at?.startsWith(today)
-    );
+      const allPurchases = purchases || [];
+      const completed = allPurchases.filter(p => p.status === 'completed');
+      const todayP = completed.filter(p => p.created_at?.startsWith(today));
 
-    // Get user emails from purchases
-    const recent = allPurchases.slice(0, 10).map(p => ({
-      ...p,
-      email: p.email || 'customer@email.com',
-    }));
+      const recent = allPurchases.slice(0, 10).map(p => ({
+        ...p,
+        email: p.email || 'customer@email.com',
+      }));
 
-    setStats({
-      totalRevenue: completed.reduce(
-        (s, p) => s + (p.amount || 0), 0
-      ),
-      todayRevenue: todayP.reduce(
-        (s, p) => s + (p.amount || 0), 0
-      ),
-      totalCustomers: profiles?.users?.length || 0,
-      newToday: (profiles?.users || []).filter(
-        (u: { created_at: string }) =>
-          u.created_at?.startsWith(today)
-      ).length,
-      activeSignals: markets?.length || 0,
-      totalPurchases: completed.length,
-      footballSales: completed.filter(
-        p => p.signal_type === 'football'
-      ).length,
-      aviatorSales: completed.filter(
-        p => p.signal_type === 'aviator'
-      ).length,
-    });
+      setStats({
+        totalRevenue: completed.reduce((s, p) => s + (p.amount || 0), 0),
+        todayRevenue: todayP.reduce((s, p) => s + (p.amount || 0), 0),
+        totalCustomers: profiles?.users?.length || 0,
+        newToday: (profiles?.users || []).filter(
+          (u: { created_at: string }) => u.created_at?.startsWith(today)
+        ).length,
+        activeSignals: markets?.length || 0,
+        totalPurchases: completed.length,
+        footballSales: completed.filter(p => p.signal_type === 'football').length,
+        aviatorSales: completed.filter(p => p.signal_type === 'aviator').length,
+      });
 
-    setRecentPurchases(recent);
-    setLoading(false);
+      setRecentPurchases(recent);
+    } catch (error) {
+      console.error("Error loading dashboard data:", error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => { load(); }, []);
@@ -174,21 +164,17 @@ export default function AdminDashboard() {
   ];
 
   return (
-    <div className="min-h-screen bg-[#050505] text-white 
-      font-sans p-6">
+    <div className="min-h-screen bg-[#050505] text-white font-sans p-4 sm:p-6">
       <div className="max-w-7xl mx-auto">
 
         {/* Header */}
-        <div className="flex items-center justify-between mb-8">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-8">
           <div>
-            <h1 className="text-3xl font-black tracking-tight 
-              text-yellow-500 uppercase italic">
+            <h1 className="text-3xl font-black tracking-tight text-yellow-500 uppercase italic">
               GLOBAL HUB
             </h1>
-            <p className="text-zinc-500 text-xs uppercase 
-              tracking-widest mt-1">
-              Admin Control Center //
-              {new Date().toLocaleDateString('en-US', {
+            <p className="text-zinc-500 text-xs uppercase tracking-widest mt-1">
+              Admin Control Center // {new Date().toLocaleDateString('en-US', {
                 weekday: 'long',
                 month: 'long',
                 day: 'numeric'
@@ -199,44 +185,32 @@ export default function AdminDashboard() {
             type="button"
             onClick={load}
             disabled={loading}
-            className="flex items-center gap-2 text-zinc-500 
-              hover:text-white border border-zinc-800 
-              px-4 py-2 rounded-xl text-xs font-bold 
-              uppercase transition-all"
+            className="flex items-center gap-2 text-zinc-500 hover:text-white border border-zinc-800 px-4 py-2 rounded-xl text-xs font-bold uppercase transition-all w-full sm:w-auto justify-center"
           >
-            <RefreshCw size={14}
-              className={loading ? 'animate-spin' : ''} />
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
             Refresh
           </button>
         </div>
 
         {/* Stats Grid */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 
-          gap-4 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
           {statCards.map(card => {
             const Icon = card.icon;
             return (
-              <div key={card.label}
-                className="bg-zinc-900/50 border 
-                  border-zinc-800 rounded-2xl p-5">
-                <div className="flex items-start 
-                  justify-between mb-4">
+              <div key={card.label} className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-5">
+                <div className="flex items-start justify-between mb-4">
                   <div style={{
                     background: card.bg,
                     padding: '10px',
                     borderRadius: '10px'
                   }}>
-                    <Icon size={20}
-                      style={{ color: card.color }} />
+                    <Icon size={20} style={{ color: card.color }} />
                   </div>
                 </div>
-                <p className="font-black text-2xl 
-                  font-mono mb-1"
-                  style={{ color: card.color }}>
+                <p className="font-black text-2xl font-mono mb-1" style={{ color: card.color }}>
                   {loading ? '...' : card.value}
                 </p>
-                <p className="text-zinc-500 text-xs uppercase 
-                  tracking-wider">
+                <p className="text-zinc-500 text-xs uppercase tracking-wider">
                   {card.label}
                 </p>
                 <p className="text-zinc-600 text-xs mt-1">
@@ -247,36 +221,29 @@ export default function AdminDashboard() {
           })}
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 
-          gap-6 mb-8">
+        {/* Main Dashboard Workspace Layout */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
 
-          {/* Modules */}
+          {/* Control Modules Section */}
           <div className="lg:col-span-2">
-            <p className="text-xs font-bold uppercase 
-              tracking-widest text-zinc-500 mb-4">
+            <p className="text-xs font-bold uppercase tracking-widest text-zinc-500 mb-4">
               Control Modules
             </p>
-            <div className="grid grid-cols-2 md:grid-cols-3 
-              gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
               {modules.map(m => {
                 const Icon = m.icon;
                 return (
                   <Link key={m.href} href={m.href}
-                    className="block p-4 rounded-xl border 
-                      hover:scale-105 transition-all group"
+                    className="block p-4 rounded-xl border hover:scale-[1.02] active:scale-95 transition-all group"
                     style={{
                       background: m.bg,
                       borderColor: m.border
                     }}>
-                    <Icon size={22} className="mb-3"
-                      style={{ color: m.color }} />
-                    <p className="font-black text-xs 
-                      uppercase tracking-wider mb-1"
-                      style={{ color: m.color }}>
+                    <Icon size={22} className="mb-3" style={{ color: m.color }} />
+                    <p className="font-black text-xs uppercase tracking-wider mb-1" style={{ color: m.color }}>
                       {m.label}
                     </p>
-                    <p className="text-zinc-500 text-xs 
-                      leading-relaxed">
+                    <p className="text-zinc-400 text-xs leading-relaxed">
                       {m.desc}
                     </p>
                   </Link>
@@ -285,63 +252,43 @@ export default function AdminDashboard() {
             </div>
           </div>
 
-          {/* Recent Purchases */}
+          {/* Recent Purchases Section */}
           <div>
-            <div className="flex items-center 
-              justify-between mb-4">
-              <p className="text-xs font-bold uppercase 
-                tracking-widest text-zinc-500">
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-xs font-bold uppercase tracking-widest text-zinc-500">
                 Recent Sales
               </p>
-              <Link href="/inventory"
-                className="text-xs text-yellow-500 
-                  hover:text-yellow-400 flex items-center gap-1">
-                View All
-                <ArrowRight size={12} />
+              <Link href="/inventory" className="text-xs text-yellow-500 hover:text-yellow-400 flex items-center gap-1">
+                View All <ArrowRight size={12} />
               </Link>
             </div>
-            <div className="bg-zinc-900/50 border 
-              border-zinc-800 rounded-2xl overflow-hidden">
+            <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl overflow-hidden">
               {loading ? (
-                <div className="p-8 text-center 
-                  text-zinc-600 text-xs animate-pulse">
+                <div className="p-8 text-center text-zinc-600 text-xs animate-pulse">
                   Loading...
                 </div>
               ) : recentPurchases.length === 0 ? (
-                <div className="p-8 text-center 
-                  text-zinc-600 text-xs">
+                <div className="p-8 text-center text-zinc-600 text-xs">
                   No sales yet
                 </div>
               ) : (
                 <div className="divide-y divide-zinc-800">
                   {recentPurchases.map(p => (
-                    <div key={p.id}
-                      className="px-4 py-3 flex items-center 
-                        justify-between gap-3">
+                    <div key={p.id} className="px-4 py-3 flex items-center justify-between gap-3">
                       <div className="min-w-0 flex-1">
-                        <p className="text-xs font-bold 
-                          truncate text-white">
-                          {p.signal_type === 'football'
-                            ? '⚽' : '✈️'
-                          } {p.plan || 'Signal'}
+                        <p className="text-xs font-bold truncate text-white">
+                          {p.signal_type === 'football' ? '⚽' : '✈️'} {p.plan || 'Signal'}
                         </p>
-                        <p className="text-zinc-600 
-                          text-[10px] mt-0.5">
-                          {new Date(p.created_at)
-                            .toLocaleDateString()}
+                        <p className="text-zinc-600 text-[10px] mt-0.5">
+                          {new Date(p.created_at).toLocaleDateString()}
                         </p>
                       </div>
                       <div className="text-right">
-                        <p className="text-xs font-black 
-                          font-mono text-green-400">
-                          {p.currency || 'KES'}{' '}
-                          {(p.amount || 0).toLocaleString()}
+                        <p className="text-xs font-black font-mono text-green-400">
+                          {p.currency || 'KES'}{' '}{(p.amount || 0).toLocaleString()}
                         </p>
-                        <span className={`text-[10px] 
-                          font-bold px-2 py-0.5 rounded-full ${
-                          p.status === 'completed'
-                            ? 'bg-green-500/20 text-green-400'
-                            : 'bg-zinc-800 text-zinc-500'
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                          p.status === 'completed' ? 'bg-green-500/20 text-green-400' : 'bg-zinc-800 text-zinc-500'
                         }`}>
                           {p.status}
                         </span>
@@ -352,6 +299,7 @@ export default function AdminDashboard() {
               )}
             </div>
           </div>
+
         </div>
 
       </div>

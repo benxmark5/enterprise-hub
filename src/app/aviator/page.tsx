@@ -44,7 +44,7 @@ export default function AviatorAdminPage() {
     setSignals([]);
     try {
       // 🟢 Update your fetch line to hit your new sub-folder route exactly:
-      const res = await fetch('/aviator/api', {
+        const res = await fetch('https://enterprise-backend-osh7.onrender.com/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pattern: pattern.trim() }),
