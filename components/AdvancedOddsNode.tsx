@@ -4,13 +4,15 @@ import { TrendingUp, TrendingDown, Send, Calculator, FileText } from 'lucide-rea
 import { supabase } from '@/app/supabase';
 
 type ApiMatch = {
-  id: number;
-  league?: { id: number; name: string };
-  participants?: {
-    id: number;
-    name: string;
-    meta?: { location: string };
-  }[];
+  id: string;
+  homeTeam: string;
+  awayTeam: string;
+  date: string;
+  time: string;
+  league: string;
+  sport?: string;
+  odds?: { home: number; draw: number; away: number };
+  source?: string;
 };
 
 const AdvancedOddsNode = () => {
@@ -153,12 +155,12 @@ const AdvancedOddsNode = () => {
             className="bg-slate-950 border border-slate-800 text-white p-3 rounded-lg w-full"
             onChange={(e) => {
               const selected = matches.find(
-                (m) => m.id === parseInt(e.target.value, 10)
+                (m) => m.id === e.target.value
               );
               if (selected) {
-                setLeagueName(selected.league?.name ?? 'Unknown League');
-                setHomeTeam(selected.participants?.[0]?.name ?? 'Home Team');
-                setAwayTeam(selected.participants?.[1]?.name ?? 'Away Team');
+                setLeagueName(selected.league || 'Unknown League');
+                setHomeTeam(selected.homeTeam || 'Home Team');
+                setAwayTeam(selected.awayTeam || 'Away Team');
                 setNotes('');
               }
             }}
@@ -166,7 +168,7 @@ const AdvancedOddsNode = () => {
             <option value="">Select a Match...</option>
             {matches.map((m) => (
               <option key={m.id} value={m.id}>
-                {m.league?.name ?? 'Match'}: {m.participants?.[0]?.name ?? 'Home'} vs {m.participants?.[1]?.name ?? 'Away'}
+                {m.league || 'Match'}: {m.homeTeam || 'Home'} vs {m.awayTeam || 'Away'}
               </option>
             ))}
           </select>

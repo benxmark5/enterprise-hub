@@ -110,8 +110,11 @@ export default function AviatorAdminPage() {
       finalSignals = finalSignals.slice(0, 12);
     }
     
-    // 4. Expiry creation setup
-    const exp = new Date(Date.now() + 20 * 60 * 1000).toISOString();
+    // 4.// Aviator signals: 20 minutes only
+const exp = new Date(
+  Date.now() + 20 * 60 * 1000
+).toISOString();
+  
     
     // 5. Map the collection to your database rows layout
     const rows = finalSignals.map(s => ({
