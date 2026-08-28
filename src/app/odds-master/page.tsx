@@ -377,12 +377,9 @@ export default function OddsMaster() {
     setAwayPlayers([]);
     try {
       const res = await fetch(`/api/match-stats/${matchId}`);
-if (!res.ok) {
-  console.warn(`Stats API failed with status: ${res.status}`);
-  return null; // Return null instead of crashing the app with an unhandled "throw"
-}
-const data = await res.json();
-if (data.error) throw new Error(data.error);
+      if (!res.ok) throw new Error(`${res.status}`);
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
 
       const participants = data.fixture?.data?.participants || [];
       if (participants.length >= 2) {
