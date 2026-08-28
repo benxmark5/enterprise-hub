@@ -17,6 +17,8 @@ type Event = {
   event_time: string; status: string;
   is_published: boolean; is_featured: boolean;
   emoji: string;
+  home_team_color?: string;
+  away_team_color?: string;
 };
 
 type TierSummary = {
@@ -42,7 +44,7 @@ export default function EventsManagePage() {
       .select('event_id, total_quantity, sold_quantity, price_usd');
 
     const summary: TierSummary[] = [];
-    const grouped: Record<string, typeof tierData> = {};
+    const grouped: Record<string, any[]> = {};
     (tierData || []).forEach(t => {
       if (!grouped[t.event_id]) grouped[t.event_id] = [];
       grouped[t.event_id].push(t);

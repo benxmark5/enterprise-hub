@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { matchId: string } }
+  { params }: { params: Promise<{ matchId: string }> }
 ) {
   const token = process.env.SPORTMONKS_TOKEN;
 
@@ -13,8 +13,9 @@ export async function GET(
   }
 
   try {
+    const { matchId } = await params;
     const res = await fetch(
-      `https://api.sportmonks.com/v3/football/odds/pre-match/fixtures/${params.matchId}` +
+      `https://api.sportmonks.com/v3/football/odds/pre-match/fixtures/${matchId}` +
       `?api_token=${token}` +
       `&include=bookmaker;market` +
       `&per_page=200`,

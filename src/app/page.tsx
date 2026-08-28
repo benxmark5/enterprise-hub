@@ -33,6 +33,7 @@ type Purchase = {
   signal_type: string;
   status: string;
   created_at: string;
+  visitor_country?: string;
 };
 
 export default function AdminDashboard() {

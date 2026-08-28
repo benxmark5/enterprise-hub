@@ -1,10 +1,12 @@
 import { NextRequest } from 'next/server';
 
-export async function GET(
-  req: NextRequest,
-  { params }: { params: { matchId: string } }
-) {
+export async function GET(req: NextRequest) {
   const token = process.env.SPORTMONKS_TOKEN;
+  const matchId = req.nextUrl.searchParams.get('matchId');
+
+  if (!matchId) {
+    return Response.json({ error: 'matchId query parameter required' }, { status: 400 });
+  }
 
   if (!token) {
     return Response.json({
@@ -17,7 +19,7 @@ export async function GET(
 
     // Fetch fixture with all includes
     const fixtureRes = await fetch(
-      `${base}/fixtures/${params.matchId}` +
+      `${base}/fixtures/${matchId}` +
       `?api_token=${token}` +
       `&include=participants.players.player` +
       `;participants.players.statistics` +
@@ -40,7 +42,7 @@ export async function GET(
     let h2h = { data: [] };
     try {
       const h2hRes = await fetch(
-        `${base}/fixtures/${params.matchId}/head2head` +
+        `${base}/fixtures/${matchId}/head2head` +
         `?api_token=${token}` +
         `&include=participants;scores` +
         `&per_page=10`,

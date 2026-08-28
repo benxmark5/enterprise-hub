@@ -2,6 +2,34 @@ import { NextResponse } from "next/server";
 
 const ODDS_API_KEY = process.env.ODDS_API_KEY; 
 
+function generateMockMatches() {
+  const now = new Date().toISOString();
+  return [
+    {
+      id: 'mock-1',
+      home_team: 'Home FC',
+      away_team: 'Away FC',
+      commence_time: now,
+      bookmakers: [
+        {
+          title: 'MockBook',
+          markets: [
+            {
+              key: 'h2h',
+              outcomes: [
+                { name: 'Home FC', price: 1.5 },
+                { name: 'Away FC', price: 2.5 },
+                { name: 'Draw', price: 3.0 }
+              ]
+            }
+          ]
+        }
+      ],
+      sport_title: 'Soccer'
+    }
+  ];
+}
+
 export async function GET() {
   try {
     if (!ODDS_API_KEY) {
