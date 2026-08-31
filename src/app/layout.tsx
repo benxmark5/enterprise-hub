@@ -1,12 +1,9 @@
-import "./globals.css";
-import { Inter } from "next/font/google";
-import { SystemProvider } from "./context/systemcontext";
+import type { Metadata } from 'next';
+import './globals.css';
 
-const inter = Inter({ subsets: ["latin"] });
-
-export const metadata = {
-  title: "Enterprise Hub",
-  description: "Signal Management Automation",
+export const metadata: Metadata = {
+  title: 'Global Hub Admin',
+  description: 'Enterprise Admin Dashboard',
 };
 
 export default function RootLayout({
@@ -15,13 +12,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className="dark">
-      <body className={`${inter.className} bg-[#050505] text-white antialiased`}>
-        <SystemProvider>
-          <main className="min-h-screen">
-            {children}
-          </main>
-        </SystemProvider>
+    <html lang="en">
+      <body className="min-h-screen bg-[#0A0A0F] text-white antialiased">
+        {children}
       </body>
     </html>
   );

@@ -3,9 +3,9 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/app/supabase';
 import {
-  Plus, Calendar, MapPin, Ticket,
+  Plus, Calendar as CalendarIcon, MapPin, Ticket,
   ArrowLeft, Edit, Eye, EyeOff,
-  RefreshCw, Star, Users, DollarSign
+  RefreshCw, Star, Users, DollarSign, Upload, Image, Tag
 } from 'lucide-react';
 
 type Event = {
@@ -29,8 +29,25 @@ type TierSummary = {
 export default function EventsManagePage() {
   const [events, setEvents] = useState<Event[]>([]);
   const [tiers, setTiers] = useState<TierSummary[]>([]);
+  const [eventTypes, setEventTypes] = useState<any[]>([]);
+  const [selectedEventType, setSelectedEventType] = useState('');
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoPreview, setLogoPreview] = useState('');
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'published' | 'draft'>('all');
+
+  // Handle logo upload preview
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setLogoFile(file);
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setLogoPreview(event.target?.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
 
   const load = async () => {
     setLoading(true);
@@ -151,6 +168,49 @@ export default function EventsManagePage() {
               <Plus size={16} /> Create First Event
             </Link>
           </div>
+        
+          {/* Quick event meta (type + logo) */}
+          <div className="mb-6 grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm text-zinc-400 mb-1">Event Type</label>
+              <select
+                value={selectedEventType}
+                onChange={(e) => setSelectedEventType(e.target.value)}
+                className="w-full px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white"
+              >
+                <option value="">Select Event Type</option>
+                {eventTypes.map((type) => (
+                  <option key={type.id} value={type.id}>
+                    {type.icon} {type.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm text-zinc-400 mb-1">Event Logo</label>
+              <div className="flex items-center gap-4">
+                <div className="w-20 h-20 bg-zinc-800 rounded-xl border-2 border-dashed border-zinc-700 flex items-center justify-center overflow-hidden">
+                  {logoPreview ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={logoPreview} alt="Logo" className="w-full h-full object-cover" />
+                  ) : (
+                    <Image size={24} className="text-zinc-500" />
+                  )}
+                </div>
+                <label className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg cursor-pointer transition">
+                  <Upload size={18} className="inline mr-2" />
+                  Upload Logo
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleLogoUpload}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+            </div>
+          </div>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {filtered.map(event => {
@@ -202,7 +262,7 @@ export default function EventsManagePage() {
                   <div className="p-4">
                     <div className="flex items-center gap-4 text-xs text-zinc-500 mb-3">
                       <span className="flex items-center gap-1">
-                        <Calendar size={11} />
+                        <CalendarIcon size={11} />
                         {new Date(event.event_date).toLocaleDateString('en', { day: 'numeric', month: 'short', year: 'numeric' })}
                       </span>
                       <span className="flex items-center gap-1">

@@ -1,438 +1,872 @@
-"use client";
-import React, { useState, useEffect } from 'react';
-import { 
-  Ticket, ArrowLeft, RefreshCw, 
-  CheckCircle, XCircle, Clock,
-  TrendingUp, DollarSign, Activity,
-  Eye, Send
-} from 'lucide-react';
-import Link from 'next/link';
-import { supabase } from '@/app/supabase';
+'use client';
 
-type Market = {
+import { useState, useEffect } from 'react';
+import { supabase } from '@/app/supabase';
+import Link from 'next/link';
+import {
+  Ticket, Plus, RefreshCw, Loader2, ArrowLeft,
+  Search, Filter, X, CheckCircle, AlertCircle,
+  Eye, Trash2, Download, Users, DollarSign,
+  Calendar, MapPin, QrCode, Copy, Edit2
+} from 'lucide-react';
+
+type TicketTier = {
   id: string;
-  name: string;
-  odds: number;
+  event_id: string;
+  tier_name: string;
+  section_name: string;
   price: number;
-  league_name: string;
-  home_team: string;
-  away_team: string;
-  status: string;
-  is_live: boolean;
-  created_at: string;
+  total_tickets: number;
+  sold_tickets: number;
+  is_vip: boolean;
+  includes_benefits: string[];
+  max_purchase_per_user: number;
+  early_bird_price: number | null;
+  early_bird_end_date: string | null;
 };
 
-export default function TicketingGate() {
-  const [markets, setMarkets] = useState<Market[]>([]);
+type Ticket = {
+  id: string;
+  event_id: string;
+  tier_id: string;
+  seat_number: string;
+  row_number: number;
+  section_name: string;
+  ticket_holder_name: string;
+  ticket_holder_email: string;
+  entry_status: string;
+  qr_code: string;
+  created_at: string;
+  tier_name: string;
+  price: number;
+};
+
+export default function TicketingPage() {
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState('ALL');
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [tiers, setTiers] = useState<TicketTier[]>([]);
+  const [events, setEvents] = useState<any[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterStatus, setFilterStatus] = useState('all');
+  
+  // Modal states
+  const [showAddTier, setShowAddTier] = useState(false);
+  const [showAddTicket, setShowAddTicket] = useState(false);
+  const [selectedEvent, setSelectedEvent] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
-  // Stats
-  const totalMarkets = markets.length;
-  const liveMarkets = markets.filter(m => m.is_live).length;
-  const draftMarkets = markets.filter(
-    m => m.status === 'draft'
-  ).length;
-  const totalValue = markets.reduce(
-    (sum, m) => sum + (m.price || 0), 0
-  );
+  // New Tier Form
+  const [newTier, setNewTier] = useState({
+    tier_name: '',
+    section_name: '',
+    price: 0,
+    total_tickets: 0,
+    is_vip: false,
+    max_purchase_per_user: 10,
+    includes_benefits: [] as string[],
+    early_bird_price: null as number | null,
+    early_bird_end_date: null as string | null,
+  });
 
-  const fetchMarkets = async () => {
-    setLoading(true);
+  // New Ticket Form
+  const [newTicket, setNewTicket] = useState({
+    tier_id: '',
+    seat_number: '',
+    row_number: '',
+    section_name: '',
+    ticket_holder_name: '',
+    ticket_holder_email: '',
+  });
+
+  const [benefitInput, setBenefitInput] = useState('');
+
+  // Load data
+  const loadData = async () => {
     try {
-      const { data, error } = await supabase
-        .from('markets')
+      setLoading(true);
+      setError('');
+
+      // Load events
+      const { data: eventsData } = await supabase
+        .from('stadium_events')
+        .select('id, title, event_date')
+        .eq('is_deleted', false)
+        .order('event_date', { ascending: true });
+
+      setEvents(eventsData || []);
+
+      // Load tiers
+      const { data: tiersData } = await supabase
+        .from('tickets_tiers')
         .select('*')
+        .order('price', { ascending: true });
+
+      setTiers(tiersData || []);
+
+      // Load tickets with tier info
+      const { data: ticketsData } = await supabase
+        .from('tickets')
+        .select('*, tickets_tiers(tier_name, price)')
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
-      setMarkets(data || []);
-    } catch (e) {
-      console.error('Error fetching markets:', e);
+      if (ticketsData) {
+        const formatted = ticketsData.map((t: any) => ({
+          ...t,
+          tier_name: t.tickets_tiers?.tier_name || 'N/A',
+          price: t.tickets_tiers?.price || 0,
+        }));
+        setTickets(formatted);
+      }
+
+    } catch (err: any) {
+      console.error('Error loading data:', err);
+      setError(err.message);
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => { fetchMarkets(); }, []);
+  // Create Tier with Tickets
+  const createTier = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedEvent) {
+      setError('Please select an event');
+      return;
+    }
 
-  // Go Live — single market
-  const handleGoLive = async (market: Market) => {
+    setSubmitting(true);
+    setError('');
+
     try {
-      const { error } = await supabase
-        .from('markets')
-        .update({ status: 'live', is_live: true })
-        .eq('id', market.id);
+      // 1. Insert the tier
+      const { data: tierData, error: tierError } = await supabase
+        .from('tickets_tiers')
+        .insert([{
+          event_id: selectedEvent,
+          tier_name: newTier.tier_name || 'Standard',
+          section_name: newTier.section_name || 'General',
+          price: newTier.price || 0,
+          total_tickets: newTier.total_tickets || 0,
+          sold_tickets: 0,
+          is_vip: newTier.is_vip || false,
+          max_purchase_per_user: newTier.max_purchase_per_user || 10,
+          includes_benefits: newTier.includes_benefits || [],
+          early_bird_price: newTier.early_bird_price || null,
+          early_bird_end_date: newTier.early_bird_end_date || null,
+        }])
+        .select();
 
-      if (error) throw error;
-      await fetchMarkets();
-      alert(`✅ ${market.home_team} vs ${market.away_team} is now LIVE!`);
-    } catch (e) {
-      alert('Error: ' + String(e));
+      if (tierError) throw tierError;
+
+      // 2. Generate individual tickets
+      if (tierData && newTier.total_tickets > 0) {
+        const ticketsToInsert = [];
+        for (let i = 1; i <= newTier.total_tickets; i++) {
+          ticketsToInsert.push({
+            tier_id: tierData[0].id,
+            event_id: selectedEvent,
+            seat_number: `${newTier.section_name || 'GEN'}-${i}`,
+            row_number: Math.ceil(i / 10),
+            section_name: newTier.section_name || 'General',
+            qr_code: `QR-${tierData[0].id}-${i}-${Date.now()}`,
+            entry_status: 'pending',
+          });
+        }
+
+        const { error: ticketsError } = await supabase
+          .from('tickets')
+          .insert(ticketsToInsert);
+
+        if (ticketsError) throw ticketsError;
+
+        setSuccess(`Created ${newTier.total_tickets} tickets for ${newTier.tier_name || 'Standard'} tier`);
+      } else {
+        setSuccess(`Created tier: ${newTier.tier_name || 'Standard'}`);
+      }
+
+      setTimeout(() => setSuccess(''), 4000);
+      setShowAddTier(false);
+      resetTierForm();
+      loadData();
+    } catch (err: any) {
+      console.error('Create tier error:', err);
+      setError(err.message || 'Failed to create tier');
+    } finally {
+      setSubmitting(false);
     }
   };
 
-  // Mark as Sold — records revenue locally
-  const handleMarkSold = async (market: Market) => {
-    if (!confirm(
-      `Mark "${market.home_team} vs ${market.away_team}" as SOLD?\n` +
-      `This will record $${market.price} revenue.`
-    )) return;
+  // Create Single Ticket
+  const createSingleTicket = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedEvent) {
+      setError('Please select an event');
+      return;
+    }
+
+    setSubmitting(true);
+    setError('');
 
     try {
       const { error } = await supabase
-        .from('markets')
-        .update({ status: 'closed', is_live: false })
-        .eq('id', market.id);
+        .from('tickets')
+        .insert([{
+          tier_id: newTicket.tier_id || null,
+          event_id: selectedEvent,
+          seat_number: newTicket.seat_number || 'N/A',
+          row_number: parseInt(newTicket.row_number) || 0,
+          section_name: newTicket.section_name || 'General',
+          ticket_holder_name: newTicket.ticket_holder_name || null,
+          ticket_holder_email: newTicket.ticket_holder_email || null,
+          qr_code: `QR-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+          entry_status: 'pending',
+        }]);
 
       if (error) throw error;
 
-      const calculatedRevenue = market.price * market.odds;
-      console.log(`Revenue saved locally: $${calculatedRevenue} for ${market.home_team} vs ${market.away_team}`);
-
-      await fetchMarkets();
-      alert(
-        `💰 Sold!\n` +
-        `Revenue: $${calculatedRevenue.toFixed(2)} recorded`
-      );
-    } catch (e) {
-      alert('Error: ' + String(e));
+      setSuccess('Ticket created successfully!');
+      setTimeout(() => setSuccess(''), 4000);
+      setShowAddTicket(false);
+      resetTicketForm();
+      loadData();
+    } catch (err: any) {
+      console.error('Create ticket error:', err);
+      setError(err.message || 'Failed to create ticket');
+    } finally {
+      setSubmitting(false);
     }
   };
 
-  // Close/Cancel market
-  const handleClose = async (id: string) => {
-    if (!confirm('Close this market?')) return;
+  // Reset forms
+  const resetTierForm = () => {
+    setNewTier({
+      tier_name: '',
+      section_name: '',
+      price: 0,
+      total_tickets: 0,
+      is_vip: false,
+      max_purchase_per_user: 10,
+      includes_benefits: [],
+      early_bird_price: null,
+      early_bird_end_date: null,
+    });
+    setBenefitInput('');
+    setSelectedEvent('');
+  };
+
+  const resetTicketForm = () => {
+    setNewTicket({
+      tier_id: '',
+      seat_number: '',
+      row_number: '',
+      section_name: '',
+      ticket_holder_name: '',
+      ticket_holder_email: '',
+    });
+    setSelectedEvent('');
+  };
+
+  // Add/Remove benefits
+  const addBenefit = () => {
+    if (benefitInput.trim() && !newTier.includes_benefits.includes(benefitInput.trim())) {
+      setNewTier({
+        ...newTier,
+        includes_benefits: [...newTier.includes_benefits, benefitInput.trim()]
+      });
+      setBenefitInput('');
+    }
+  };
+
+  const removeBenefit = (benefit: string) => {
+    setNewTier({
+      ...newTier,
+      includes_benefits: newTier.includes_benefits.filter(b => b !== benefit)
+    });
+  };
+
+  // Update ticket status
+  const updateTicketStatus = async (id: string, status: string) => {
     try {
       const { error } = await supabase
-        .from('markets')
-        .update({ status: 'closed', is_live: false })
+        .from('tickets')
+        .update({ entry_status: status })
         .eq('id', id);
 
       if (error) throw error;
-      await fetchMarkets();
-    } catch (e) {
-      alert('Error: ' + String(e));
+
+      setSuccess(`Ticket ${status}`);
+      setTimeout(() => setSuccess(''), 3000);
+      loadData();
+    } catch (err: any) {
+      setError(err.message);
     }
   };
 
-  // Dispatch ALL drafts to live
-  const handleDispatchAllDrafts = async () => {
-    const drafts = markets.filter(m => m.status === 'draft');
-    if (drafts.length === 0) {
-      alert('No drafts to dispatch!');
-      return;
-    }
-    if (!confirm(
-      `Send ALL ${drafts.length} drafts LIVE to public?`
-    )) return;
-
+  // Delete ticket
+  const deleteTicket = async (id: string) => {
+    if (!confirm('Delete this ticket?')) return;
     try {
       const { error } = await supabase
-        .from('markets')
-        .update({ status: 'live', is_live: true })
-        .eq('status', 'draft');
+        .from('tickets')
+        .delete()
+        .eq('id', id);
 
       if (error) throw error;
-      await fetchMarkets();
-      alert(`🚀 ${drafts.length} markets are now LIVE!`);
-    } catch (e) {
-      alert('Error: ' + String(e));
+      setSuccess('Ticket deleted');
+      setTimeout(() => setSuccess(''), 3000);
+      loadData();
+    } catch (err: any) {
+      setError(err.message);
     }
   };
 
-  const filtered = filter === 'ALL'
-    ? markets
-    : markets.filter(m =>
-        filter === 'LIVE'
-          ? m.is_live
-          : m.status === filter.toLowerCase()
-      );
-
-  const getStatusStyle = (status: string, isLive: boolean) => {
-    if (isLive) return 'bg-red-500/20 text-red-400 border-red-500/30';
-    if (status === 'draft') 
-      return 'bg-zinc-700/50 text-zinc-400 border-zinc-600';
-    if (status === 'pending') 
-      return 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30';
-    if (status === 'closed') 
-      return 'bg-green-500/20 text-green-400 border-green-500/30';
-    return 'bg-blue-500/20 text-blue-400 border-blue-500/30';
+  // Export tickets
+  const exportTickets = () => {
+    const headers = 'Seat,Section,Tier,Holder,Email,Status,Price\n';
+    const data = tickets.map(t => 
+      `${t.seat_number},${t.section_name},${t.tier_name},${t.ticket_holder_name || ''},${t.ticket_holder_email || ''},${t.entry_status},${t.price}`
+    ).join('\n');
+    
+    const blob = new Blob([headers + data], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `tickets-${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
+  const getStatusBadge = (status: string) => {
+    const styles: Record<string, string> = {
+      pending: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
+      used: 'bg-green-500/20 text-green-400 border-green-500/30',
+      expired: 'bg-red-500/20 text-red-400 border-red-500/30',
+      cancelled: 'bg-gray-500/20 text-gray-400 border-gray-500/30',
+    };
+    return styles[status] || styles.pending;
+  };
+
+  const filteredTickets = tickets.filter(ticket => {
+    const matchSearch = ticket.ticket_holder_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                        ticket.seat_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                        ticket.section_name.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchStatus = filterStatus === 'all' || ticket.entry_status === filterStatus;
+    return matchSearch && matchStatus;
+  });
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
   return (
-    <div className="min-h-screen bg-[#050505] text-white font-sans">
-      <div className="max-w-7xl mx-auto p-6">
-
+    <div className="min-h-screen bg-[#050505] text-white p-6">
+      <div className="max-w-7xl mx-auto">
         {/* Header */}
-        <div className="flex flex-col md:flex-row justify-between 
-          items-start md:items-center mb-8 gap-4">
-          <div>
-            <Link href="/"
-              className="flex items-center text-zinc-500 
-                hover:text-purple-400 mb-3 text-[10px] 
-                font-bold tracking-widest uppercase 
-                transition-colors">
-              <ArrowLeft size={14} className="mr-2" />
-              Return to Hub
+        <div className="flex flex-wrap justify-between items-center gap-4 mb-8">
+          <div className="flex items-center gap-4">
+            <Link href="/admin">
+              <button className="p-2 bg-zinc-800 rounded-xl hover:bg-zinc-700 transition">
+                <ArrowLeft size={20} />
+              </button>
             </Link>
-            <div className="flex items-center gap-3">
-              <Ticket className="text-purple-400" size={28} />
-              <h1 className="text-4xl font-black italic 
-                tracking-tighter text-purple-400 uppercase">
-                TICKETING_GATE
-              </h1>
+            <div>
+              <h1 className="text-3xl font-black text-white">🎫 Ticket Management</h1>
+              <p className="text-zinc-500 text-sm">Manage tickets, tiers, and access</p>
             </div>
-            <p className="text-xs text-zinc-500 mt-1 
-              uppercase tracking-widest">
-              Market Control // {totalMarkets} total markets
-            </p>
           </div>
-
           <div className="flex gap-3">
             <button
-              onClick={fetchMarkets}
-              className="p-3 rounded-lg bg-zinc-900 
-                border border-zinc-800 text-zinc-400 
-                hover:text-white transition-colors"
+              onClick={() => setShowAddTier(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-purple-500 hover:bg-purple-400 rounded-xl font-bold transition"
             >
-              <RefreshCw size={18} />
+              <Plus size={18} />
+              Add Tier
             </button>
-            {draftMarkets > 0 && (
-              <button
-                onClick={handleDispatchAllDrafts}
-                className="flex items-center gap-2 
-                  bg-purple-600 hover:bg-purple-500 
-                  text-white px-6 py-3 rounded-xl 
-                  font-bold text-sm transition-all"
-              >
-                <Send size={18} />
-                Dispatch All Drafts ({draftMarkets})
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Stats Row */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-          {[
-            {
-              label: 'Total Markets',
-              value: totalMarkets,
-              icon: Eye,
-              color: 'text-white'
-            },
-            {
-              label: 'Live Now',
-              value: liveMarkets,
-              icon: Activity,
-              color: 'text-red-400'
-            },
-            {
-              label: 'Drafts',
-              value: draftMarkets,
-              icon: Clock,
-              color: 'text-yellow-400'
-            },
-            {
-              label: 'Total Value',
-              value: `$${totalValue.toFixed(2)}`,
-              icon: DollarSign,
-              color: 'text-green-400'
-            },
-          ].map(({ label, value, icon: Icon, color }) => (
-            <div key={label}
-              className="bg-zinc-900/50 border border-zinc-800 
-                rounded-xl p-4">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-xs text-zinc-500 uppercase 
-                  tracking-widest">{label}</p>
-                <Icon size={14} className={color} />
-              </div>
-              <p className={`text-2xl font-black font-mono ${color}`}>
-                {value}
-              </p>
-            </div>
-          ))}
-        </div>
-
-        {/* Filter Tabs */}
-        <div className="flex gap-2 mb-6 flex-wrap">
-          {['ALL', 'LIVE', 'DRAFT', 'PENDING', 'CLOSED'].map(f => (
             <button
-              key={f}
-              onClick={() => setFilter(f)}
-              className={`px-4 py-2 text-[10px] font-bold 
-                rounded-lg uppercase tracking-widest 
-                transition-all ${
-                filter === f
-                  ? 'bg-purple-600 text-white'
-                  : 'bg-zinc-900 text-zinc-500 hover:text-white'
-              }`}
+              onClick={() => setShowAddTicket(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-500 hover:bg-blue-400 rounded-xl font-bold transition"
             >
-              {f}
-              {f === 'LIVE' && liveMarkets > 0 && (
-                <span className="ml-1 bg-red-500 text-white 
-                  rounded-full px-1.5 py-0.5 text-[9px]">
-                  {liveMarkets}
-                </span>
-              )}
-              {f === 'DRAFT' && draftMarkets > 0 && (
-                <span className="ml-1 bg-yellow-500 text-black 
-                  rounded-full px-1.5 py-0.5 text-[9px]">
-                  {draftMarkets}
-                </span>
-              )}
+              <Plus size={18} />
+              Add Ticket
             </button>
-          ))}
+            <button
+              onClick={exportTickets}
+              className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-xl font-bold transition"
+            >
+              <Download size={18} />
+              Export
+            </button>
+            <button
+              onClick={loadData}
+              disabled={loading}
+              className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-xl text-sm font-bold transition disabled:opacity-50"
+            >
+              <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+              Refresh
+            </button>
+          </div>
         </div>
 
-        {/* Markets List */}
-        <div className="bg-zinc-900/50 border border-zinc-800 
-          rounded-2xl overflow-hidden">
-          <div className="p-4 border-b border-zinc-800">
-            <h3 className="text-xs font-bold uppercase 
-              tracking-widest text-zinc-400 flex items-center gap-2">
-              <TrendingUp size={14} className="text-purple-400" />
-              Markets — {filtered.length} showing
-            </h3>
+        {/* Notifications */}
+        {error && (
+          <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-xl flex items-center gap-3">
+            <AlertCircle className="text-red-400" size={18} />
+            <p className="text-red-400 text-sm flex-1">{error}</p>
+            <button onClick={() => setError('')} className="text-red-400 hover:text-red-300">
+              <X size={18} />
+            </button>
           </div>
+        )}
 
-          {loading ? (
-            <div className="p-12 text-center text-zinc-500 
-              animate-pulse">
-              Loading markets...
-            </div>
-          ) : filtered.length === 0 ? (
-            <div className="p-12 text-center">
-              <Ticket size={40} 
-                className="mx-auto mb-3 text-zinc-700" />
-              <p className="text-zinc-500 text-sm">
-                No markets found
-              </p>
-              <p className="text-zinc-600 text-xs mt-1">
-                Go to ODDS_MASTER to analyse and draft markets
-              </p>
-              <Link href="/odds-master"
-                className="inline-block mt-4 bg-purple-600 
-                  hover:bg-purple-500 text-white px-6 py-2 
-                  rounded-lg text-sm font-bold transition-all">
-                Go to ODDS_MASTER →
-              </Link>
-            </div>
-          ) : (
-            <div className="divide-y divide-zinc-800/50">
-              {filtered.map(market => (
-                <div key={market.id}
-                  className="p-5 hover:bg-zinc-800/30 
-                    transition-all group">
-                  <div className="flex flex-col md:flex-row 
-                    md:items-center justify-between gap-4">
+        {success && (
+          <div className="mb-6 p-4 bg-green-500/10 border border-green-500/20 rounded-xl flex items-center gap-3">
+            <CheckCircle className="text-green-400" size={18} />
+            <p className="text-green-400 text-sm flex-1">{success}</p>
+            <button onClick={() => setSuccess('')} className="text-green-400 hover:text-green-300">
+              <X size={18} />
+            </button>
+          </div>
+        )}
 
-                    {/* Match Info */}
-                    <div className="flex-1">
-                      <div className="flex items-center 
-                        gap-2 mb-1 flex-wrap">
-                        <span className="text-[10px] 
-                          text-purple-400 font-bold uppercase">
-                          {market.league_name}
+        {/* Stats */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-4">
+            <p className="text-xs text-zinc-500">Total Tickets</p>
+            <p className="text-2xl font-black">{tickets.length}</p>
+          </div>
+          <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-4">
+            <p className="text-xs text-zinc-500">Available</p>
+            <p className="text-2xl font-black text-green-400">
+              {tickets.filter(t => t.entry_status === 'pending').length}
+            </p>
+          </div>
+          <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-4">
+            <p className="text-xs text-zinc-500">Sold/Used</p>
+            <p className="text-2xl font-black text-yellow-400">
+              {tickets.filter(t => t.entry_status === 'used').length}
+            </p>
+          </div>
+          <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-4">
+            <p className="text-xs text-zinc-500">Tiers</p>
+            <p className="text-2xl font-black text-purple-400">{tiers.length}</p>
+          </div>
+        </div>
+
+        {/* Filters */}
+        <div className="flex flex-wrap gap-3 mb-6">
+          <div className="flex-1 min-w-[200px] relative">
+            <Search className="absolute left-3 top-2.5 text-zinc-500" size={16} />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search by seat, section, or holder..."
+              className="w-full pl-9 pr-4 py-2 bg-zinc-800/50 border border-zinc-700 rounded-xl text-white text-sm"
+            />
+          </div>
+          <select
+            value={filterStatus}
+            onChange={(e) => setFilterStatus(e.target.value)}
+            className="px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-xl text-sm text-zinc-400"
+          >
+            <option value="all">All Status</option>
+            <option value="pending">Available</option>
+            <option value="used">Used</option>
+            <option value="expired">Expired</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+        </div>
+
+        {/* Tickets Table */}
+        <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-zinc-800/30">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-bold text-zinc-400">Seat</th>
+                  <th className="px-4 py-3 text-left text-xs font-bold text-zinc-400">Section</th>
+                  <th className="px-4 py-3 text-left text-xs font-bold text-zinc-400">Tier</th>
+                  <th className="px-4 py-3 text-left text-xs font-bold text-zinc-400">Holder</th>
+                  <th className="px-4 py-3 text-left text-xs font-bold text-zinc-400">Status</th>
+                  <th className="px-4 py-3 text-left text-xs font-bold text-zinc-400">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-800">
+                {loading ? (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-8 text-center">
+                      <Loader2 className="animate-spin inline mr-2" size={16} />
+                      Loading...
+                    </td>
+                  </tr>
+                ) : filteredTickets.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-8 text-center text-zinc-500">
+                      No tickets found
+                    </td>
+                  </tr>
+                ) : (
+                  filteredTickets.map((ticket) => (
+                    <tr key={ticket.id} className="hover:bg-zinc-800/30 transition">
+                      <td className="px-4 py-3 font-mono font-bold">{ticket.seat_number}</td>
+                      <td className="px-4 py-3">{ticket.section_name}</td>
+                      <td className="px-4 py-3 text-purple-400">{ticket.tier_name}</td>
+                      <td className="px-4 py-3">
+                        <p className="text-sm">{ticket.ticket_holder_name || 'Unassigned'}</p>
+                        <p className="text-xs text-zinc-500">{ticket.ticket_holder_email}</p>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`text-xs font-bold px-2 py-1 rounded-full border ${getStatusBadge(ticket.entry_status)}`}>
+                          {ticket.entry_status.toUpperCase()}
                         </span>
-                        <span className={`text-[10px] font-bold 
-                          px-2 py-0.5 rounded border uppercase ${
-                          getStatusStyle(market.status, market.is_live)
-                        }`}>
-                          {market.is_live ? '🔴 LIVE' : market.status}
-                        </span>
-                        {market.is_live && (
-                          <span className="flex items-center gap-1">
-                            <span className="w-1.5 h-1.5 rounded-full 
-                              bg-red-500 animate-pulse" />
-                            <span className="text-[10px] text-red-400">
-                              PUBLIC
-                            </span>
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-white font-bold uppercase">
-                        {market.home_team} 
-                        <span className="text-purple-400 mx-2">vs</span>
-                        {market.away_team}
-                      </p>
-                      <p className="text-xs text-zinc-500 mt-1">
-                        {market.name} · Created:{' '}
-                        {new Date(market.created_at)
-                          .toLocaleDateString()}
-                      </p>
-                    </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex gap-1">
+                          <button
+                            onClick={() => updateTicketStatus(ticket.id, 'used')}
+                            className="p-1.5 bg-green-500/10 text-green-400 hover:bg-green-500/20 rounded-lg transition"
+                            title="Mark as used"
+                          >
+                            <CheckCircle size={14} />
+                          </button>
+                          <button
+                            onClick={() => updateTicketStatus(ticket.id, 'expired')}
+                            className="p-1.5 bg-red-500/10 text-red-400 hover:bg-red-500/20 rounded-lg transition"
+                            title="Mark as expired"
+                          >
+                            <X size={14} />
+                          </button>
+                          <button
+                            onClick={() => deleteTicket(ticket.id)}
+                            className="p-1.5 bg-gray-500/10 text-gray-400 hover:bg-gray-500/20 rounded-lg transition"
+                            title="Delete"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
 
-                    {/* Odds + Price */}
-                    <div className="flex gap-6 font-mono text-sm">
-                      <div>
-                        <p className="text-zinc-500 text-xs">Odds</p>
-                        <p className="text-white font-bold">
-                          {market.odds?.toFixed(2)}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-zinc-500 text-xs">Price</p>
-                        <p className="text-yellow-400 font-bold">
-                          ${market.price?.toFixed(2)}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-zinc-500 text-xs">
-                          Potential
-                        </p>
-                        <p className="text-green-400 font-bold">
-                           ${(market.odds * market.price)?.toFixed(2)}
-                        </p>
-                      </div>
-                    </div>
+        {/* ============================================
+            ADD TIER MODAL
+        ============================================ */}
+        {showAddTier && (
+          <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-bold text-white">Create Ticket Tier</h2>
+                <button onClick={() => setShowAddTier(false)} className="text-zinc-500 hover:text-white">
+                  <X size={24} />
+                </button>
+              </div>
 
-                    {/* Action Buttons */}
-                    <div className="flex gap-2">
-                      {market.status === 'draft' && (
-                        <button
-                          onClick={() => handleGoLive(market)}
-                          className="flex items-center gap-1 
-                            bg-green-600 hover:bg-green-500 
-                            text-white px-4 py-2 rounded-lg 
-                            text-xs font-bold transition-all"
-                        >
-                          <Send size={12} /> Go Live
-                        </button>
-                      )}
-                      {market.is_live && (
-                        <button
-                          onClick={() => handleMarkSold(market)}
-                          className="flex items-center gap-1 
-                            bg-blue-600 hover:bg-blue-500 
-                            text-white px-4 py-2 rounded-lg 
-                            text-xs font-bold transition-all"
-                        >
-                          <CheckCircle size={12} /> Mark Sold
-                        </button>
-                      )}
-                      {market.status !== 'closed' && (
-                        <button
-                          onClick={() => handleClose(market.id)}
-                          className="flex items-center gap-1 
-                            bg-zinc-800 hover:bg-red-900 
-                            text-zinc-400 hover:text-red-400 
-                            px-4 py-2 rounded-lg text-xs 
-                            font-bold transition-all"
-                        >
-                          <XCircle size={12} /> Close
-                        </button>
-                      )}
-                    </div>
+              <form onSubmit={createTier} className="space-y-4">
+                {/* Event Selection */}
+                <div>
+                  <label className="block text-sm text-zinc-400 mb-1">Event *</label>
+                  <select
+                    value={selectedEvent}
+                    onChange={(e) => setSelectedEvent(e.target.value)}
+                    className="w-full px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white"
+                    required
+                  >
+                    <option value="">Select Event</option>
+                    {events.map((event) => (
+                      <option key={event.id} value={event.id}>
+                        {event.title} - {new Date(event.event_date).toLocaleDateString()}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm text-zinc-400 mb-1">Tier Name *</label>
+                    <input
+                      type="text"
+                      value={newTier.tier_name}
+                      onChange={(e) => setNewTier({ ...newTier, tier_name: e.target.value })}
+                      className="w-full px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white"
+                      placeholder="VIP, Premium, Standard"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-zinc-400 mb-1">Section</label>
+                    <input
+                      type="text"
+                      value={newTier.section_name}
+                      onChange={(e) => setNewTier({ ...newTier, section_name: e.target.value })}
+                      className="w-full px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white"
+                      placeholder="Section A, Floor, etc."
+                    />
                   </div>
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
 
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm text-zinc-400 mb-1">Price ($) *</label>
+                    <input
+                      type="number"
+                      value={newTier.price}
+                      onChange={(e) => setNewTier({ ...newTier, price: parseFloat(e.target.value) || 0 })}
+                      className="w-full px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white"
+                      min="0"
+                      step="0.01"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-zinc-400 mb-1">Total Tickets *</label>
+                    <input
+                      type="number"
+                      value={newTier.total_tickets}
+                      onChange={(e) => setNewTier({ ...newTier, total_tickets: parseInt(e.target.value) || 0 })}
+                      className="w-full px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white"
+                      min="1"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm text-zinc-400 mb-1">Max Per User</label>
+                    <input
+                      type="number"
+                      value={newTier.max_purchase_per_user}
+                      onChange={(e) => setNewTier({ ...newTier, max_purchase_per_user: parseInt(e.target.value) || 10 })}
+                      className="w-full px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white"
+                      min="1"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2 pt-6">
+                    <input
+                      type="checkbox"
+                      checked={newTier.is_vip}
+                      onChange={(e) => setNewTier({ ...newTier, is_vip: e.target.checked })}
+                      className="w-4 h-4 rounded border-zinc-700"
+                    />
+                    <label className="text-sm text-zinc-400">VIP Tier</label>
+                  </div>
+                </div>
+
+                {/* Benefits */}
+                <div>
+                  <label className="block text-sm text-zinc-400 mb-1">Benefits</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={benefitInput}
+                      onChange={(e) => setBenefitInput(e.target.value)}
+                      onKeyPress={(e) => e.key === 'Enter' && addBenefit()}
+                      className="flex-1 px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white"
+                      placeholder="Add benefit (e.g., VIP Lounge)"
+                    />
+                    <button
+                      type="button"
+                      onClick={addBenefit}
+                      className="px-4 py-2 bg-blue-500 hover:bg-blue-400 rounded-lg font-bold transition"
+                    >
+                      Add
+                    </button>
+                  </div>
+                  {newTier.includes_benefits.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {newTier.includes_benefits.map((benefit) => (
+                        <span key={benefit} className="flex items-center gap-1 px-3 py-1 bg-zinc-800 rounded-full text-xs">
+                          {benefit}
+                          <button
+                            type="button"
+                            onClick={() => removeBenefit(benefit)}
+                            className="text-zinc-500 hover:text-red-400"
+                          >
+                            <X size={12} />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm text-zinc-400 mb-1">Early Bird Price</label>
+                    <input
+                      type="number"
+                      value={newTier.early_bird_price || ''}
+                      onChange={(e) => setNewTier({ ...newTier, early_bird_price: e.target.value ? parseFloat(e.target.value) : null })}
+                      className="w-full px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white"
+                      min="0"
+                      step="0.01"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-zinc-400 mb-1">Early Bird End Date</label>
+                    <input
+                      type="datetime-local"
+                      value={newTier.early_bird_end_date || ''}
+                      onChange={(e) => setNewTier({ ...newTier, early_bird_end_date: e.target.value || null })}
+                      className="w-full px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex gap-3 pt-4 border-t border-zinc-800">
+                  <button
+                    type="submit"
+                    disabled={submitting}
+                    className="flex-1 py-3 bg-purple-500 hover:bg-purple-400 text-white font-bold rounded-xl transition disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {submitting ? <Loader2 className="animate-spin" size={18} /> : null}
+                    {submitting ? 'Creating...' : 'Create Tier & Tickets'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowAddTier(false)}
+                    className="flex-1 py-3 bg-zinc-800 text-zinc-400 rounded-xl hover:bg-zinc-700 transition"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* ============================================
+            ADD SINGLE TICKET MODAL
+        ============================================ */}
+        {showAddTicket && (
+          <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 max-w-md w-full">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-bold text-white">Add Single Ticket</h2>
+                <button onClick={() => setShowAddTicket(false)} className="text-zinc-500 hover:text-white">
+                  <X size={24} />
+                </button>
+              </div>
+
+              <form onSubmit={createSingleTicket} className="space-y-4">
+                <div>
+                  <label className="block text-sm text-zinc-400 mb-1">Event *</label>
+                  <select
+                    value={selectedEvent}
+                    onChange={(e) => setSelectedEvent(e.target.value)}
+                    className="w-full px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white"
+                    required
+                  >
+                    <option value="">Select Event</option>
+                    {events.map((event) => (
+                      <option key={event.id} value={event.id}>
+                        {event.title}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm text-zinc-400 mb-1">Tier (Optional)</label>
+                  <select
+                    value={newTicket.tier_id}
+                    onChange={(e) => setNewTicket({ ...newTicket, tier_id: e.target.value })}
+                    className="w-full px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white"
+                  >
+                    <option value="">No Tier</option>
+                    {tiers.filter(t => t.event_id === selectedEvent).map((tier) => (
+                      <option key={tier.id} value={tier.id}>
+                        {tier.tier_name} - ${tier.price}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm text-zinc-400 mb-1">Seat Number *</label>
+                    <input
+                      type="text"
+                      value={newTicket.seat_number}
+                      onChange={(e) => setNewTicket({ ...newTicket, seat_number: e.target.value })}
+                      className="w-full px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white"
+                      placeholder="A12"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-zinc-400 mb-1">Row Number</label>
+                    <input
+                      type="number"
+                      value={newTicket.row_number}
+                      onChange={(e) => setNewTicket({ ...newTicket, row_number: e.target.value })}
+                      className="w-full px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white"
+                      placeholder="5"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm text-zinc-400 mb-1">Section</label>
+                  <input
+                    type="text"
+                    value={newTicket.section_name}
+                    onChange={(e) => setNewTicket({ ...newTicket, section_name: e.target.value })}
+                    className="w-full px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white"
+                    placeholder="Section A"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm text-zinc-400 mb-1">Ticket Holder Name</label>
+                  <input
+                    type="text"
+                    value={newTicket.ticket_holder_name}
+                    onChange={(e) => setNewTicket({ ...newTicket, ticket_holder_name: e.target.value })}
+                    className="w-full px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white"
+                    placeholder="John Doe"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm text-zinc-400 mb-1">Ticket Holder Email</label>
+                  <input
+                    type="email"
+                    value={newTicket.ticket_holder_email}
+                    onChange={(e) => setNewTicket({ ...newTicket, ticket_holder_email: e.target.value })}
+                    className="w-full px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white"
+                    placeholder="john@example.com"
+                  />
+                </div>
+
+                <div className="flex gap-3 pt-4 border-t border-zinc-800">
+                  <button
+                    type="submit"
+                    disabled={submitting}
+                    className="flex-1 py-3 bg-blue-500 hover:bg-blue-400 text-white font-bold rounded-xl transition disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {submitting ? <Loader2 className="animate-spin" size={18} /> : null}
+                    {submitting ? 'Creating...' : 'Create Ticket'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowAddTicket(false)}
+                    className="flex-1 py-3 bg-zinc-800 text-zinc-400 rounded-xl hover:bg-zinc-700 transition"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
