@@ -25,7 +25,6 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
 
-  // Check if already logged in
   useEffect(() => {
     const checkSession = async () => {
       const { data: { session } } = await supabase.auth.getSession();
@@ -58,7 +57,6 @@ export default function LoginPage() {
       }
 
       if (data?.session) {
-        // Check admin role
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
           .select('role')
@@ -86,14 +84,12 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen bg-[#0A0A0F] flex items-center justify-center p-4 relative overflow-hidden">
-      {/* Animated Background */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute -top-40 -right-40 w-96 h-96 bg-purple-500/20 rounded-full blur-3xl"></div>
         <div className="absolute -bottom-40 -left-40 w-96 h-96 bg-blue-500/20 rounded-full blur-3xl"></div>
       </div>
 
       <div className="relative w-full max-w-md z-10">
-        {/* Brand Section */}
         <div className="text-center mb-8">
           <div className="flex justify-center mb-4">
             <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center shadow-2xl shadow-purple-500/30">
@@ -106,7 +102,6 @@ export default function LoginPage() {
           <p className="mt-2 text-sm text-white/40 font-medium">Admin Dashboard · Secure Access</p>
         </div>
 
-        {/* Login Card */}
         <div className="bg-white/5 backdrop-blur-xl rounded-2xl p-8 border border-white/10">
           <div className="flex items-center gap-3 mb-6">
             <div className="p-2 rounded-xl bg-gradient-to-br from-purple-500/20 to-blue-500/20 border border-white/5">
