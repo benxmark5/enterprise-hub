@@ -161,56 +161,58 @@ export default function EventsManagePage() {
         {loading ? (
           <div className="text-center p-12 text-zinc-500 animate-pulse">Loading events...</div>
         ) : filtered.length === 0 ? (
-          <div className="text-center p-12 bg-zinc-900/50 border border-zinc-800 rounded-2xl">
-            <Ticket size={48} className="mx-auto mb-4 text-zinc-700" />
-            <p className="text-zinc-500 mb-4">No events yet</p>
-            <Link href="/events/new" className="inline-flex items-center gap-2 bg-orange-500 text-black px-6 py-3 rounded-xl font-black text-sm">
-              <Plus size={16} /> Create First Event
-            </Link>
-          </div>
-        
-          {/* Quick event meta (type + logo) */}
-          <div className="mb-6 grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm text-zinc-400 mb-1">Event Type</label>
-              <select
-                value={selectedEventType}
-                onChange={(e) => setSelectedEventType(e.target.value)}
-                className="w-full px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white"
-              >
-                <option value="">Select Event Type</option>
-                {eventTypes.map((type) => (
-                  <option key={type.id} value={type.id}>
-                    {type.icon} {type.name}
-                  </option>
-                ))}
-              </select>
+          <>
+            <div className="text-center p-12 bg-zinc-900/50 border border-zinc-800 rounded-2xl">
+              <Ticket size={48} className="mx-auto mb-4 text-zinc-700" />
+              <p className="text-zinc-500 mb-4">No events yet</p>
+              <Link href="/events/new" className="inline-flex items-center gap-2 bg-orange-500 text-black px-6 py-3 rounded-xl font-black text-sm">
+                <Plus size={16} /> Create First Event
+              </Link>
             </div>
 
-            <div>
-              <label className="block text-sm text-zinc-400 mb-1">Event Logo</label>
-              <div className="flex items-center gap-4">
-                <div className="w-20 h-20 bg-zinc-800 rounded-xl border-2 border-dashed border-zinc-700 flex items-center justify-center overflow-hidden">
-                  {logoPreview ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={logoPreview} alt="Logo" className="w-full h-full object-cover" />
-                  ) : (
-                    <Image size={24} className="text-zinc-500" />
-                  )}
+            {/* Quick event meta (type + logo) */}
+            <div className="mb-6 grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm text-zinc-400 mb-1">Event Type</label>
+                <select
+                  value={selectedEventType}
+                  onChange={(e) => setSelectedEventType(e.target.value)}
+                  className="w-full px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white"
+                >
+                  <option value="">Select Event Type</option>
+                  {eventTypes.map((type) => (
+                    <option key={type.id} value={type.id}>
+                      {type.icon} {type.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm text-zinc-400 mb-1">Event Logo</label>
+                <div className="flex items-center gap-4">
+                  <div className="w-20 h-20 bg-zinc-800 rounded-xl border-2 border-dashed border-zinc-700 flex items-center justify-center overflow-hidden">
+                    {logoPreview ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={logoPreview} alt="Logo" className="w-full h-full object-cover" />
+                    ) : (
+                      <Image size={24} className="text-zinc-500" />
+                    )}
+                  </div>
+                  <label className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg cursor-pointer transition">
+                    <Upload size={18} className="inline mr-2" />
+                    Upload Logo
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleLogoUpload}
+                      className="hidden"
+                    />
+                  </label>
                 </div>
-                <label className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg cursor-pointer transition">
-                  <Upload size={18} className="inline mr-2" />
-                  Upload Logo
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleLogoUpload}
-                    className="hidden"
-                  />
-                </label>
               </div>
             </div>
-          </div>
+          </>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {filtered.map(event => {
