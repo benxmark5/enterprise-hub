@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import { SystemProvider } from './context/systemcontext';
 
 export const metadata: Metadata = {
   title: 'Global Hub Admin',
@@ -14,7 +15,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="min-h-screen bg-[#0A0A0F] text-white antialiased">
-        {children}
+        <SystemProvider>
+          {children}
+        </SystemProvider>
       </body>
     </html>
   );

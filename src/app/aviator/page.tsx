@@ -23,6 +23,7 @@ type LiveSignal = {
   entry_point: number;
   exit_point: number;
   confidence: number;
+  risk_level?: string;
   signal_notes: string;
   price: number;
   expires_at: string;
@@ -472,8 +473,8 @@ export default function AviatorAdminPage() {
                         <span className="text-red-400 font-black font-mono text-sm">{s.exit_point}x</span>
                         <span className="text-[10px] bg-zinc-800 text-zinc-400 px-2 py-0.5 rounded-full">{s.confidence}%</span>
                         <span className={`text-[10px] px-2 py-0.5 rounded-full`}
-                          style={{ background: `${riskColor(s.risk_level)}20`, color: riskColor(s.risk_level) }}>
-                          {s.risk_level}
+                          style={{ background: `${riskColor(s.risk_level || 'MEDIUM')}20`, color: riskColor(s.risk_level || 'MEDIUM') }}>
+                          {s.risk_level || 'MEDIUM'}
                         </span>
                       </div>
                       <p className="text-zinc-600 text-xs mt-1">
@@ -593,17 +594,17 @@ export default function AviatorAdminPage() {
                   </div>
 
                   <div className="flex gap-2 mb-3">
-                    {[3, 5, 10].map(p => (
-                      <button key={p} type="button"
-                        onClick={() => setSignals(p => p.map((sig, idx) => 
-                          idx === i ? { ...sig, suggested_price: p } : sig
+                    {[3, 5, 10].map(price => (
+                      <button key={price} type="button"
+                        onClick={() => setSignals(prev => prev.map((sig, idx) => 
+                          idx === i ? { ...sig, suggested_price: price } : sig
                         ))}
                         className={`flex-1 py-2 rounded-lg font-black text-sm border transition-all ${
-                          s.suggested_price === p
+                          s.suggested_price === price
                             ? 'border-green-500 bg-green-500/20 text-green-400'
                             : 'border-zinc-700 bg-zinc-900 text-zinc-500'
                         }`}>
-                        ${p}
+                        ${price}
                       </button>
                     ))}
                   </div>
@@ -659,10 +660,10 @@ export default function AviatorAdminPage() {
                         <td className="px-4 py-2">
                           <span className={`text-xs px-2 py-0.5 rounded-full`}
                             style={{ 
-                              background: `${riskColor(s.risk_level)}20`, 
-                              color: riskColor(s.risk_level) 
+                              background: `${riskColor(s.risk_level || 'MEDIUM')}20`, 
+                              color: riskColor(s.risk_level || 'MEDIUM') 
                             }}>
-                            {s.risk_level}
+                            {s.risk_level || 'MEDIUM'}
                           </span>
                         </td>
                         <td className="px-4 py-2">
