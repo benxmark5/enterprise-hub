@@ -7,9 +7,9 @@ export default function HomePage() {
   const router = useRouter();
 
   useEffect(() => {
-    // Direct redirect to admin
-    router.replace('/admin');
-  }, [router]);
+    // Force redirect to admin
+    window.location.href = '/admin';
+  }, []);
 
   return (
     <div className="min-h-screen bg-[#0A0A0F] flex items-center justify-center">
@@ -17,7 +17,7 @@ export default function HomePage() {
         <div className="w-16 h-16 border-4 border-purple-500/30 border-t-purple-500 rounded-full animate-spin"></div>
         <div className="absolute inset-0 flex items-center justify-center text-purple-400 font-bold text-sm">GH</div>
       </div>
-      <span className="ml-4 text-white/40 text-sm">Loading dashboard...</span>
+      <span className="ml-4 text-white/40 text-sm">Redirecting to dashboard...</span>
     </div>
   );
 }
