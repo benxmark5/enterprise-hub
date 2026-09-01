@@ -57,22 +57,72 @@ export default function CrashGameSettings() {
     setMessageType('');
 
     try {
-      const updates = [
-        { setting_key: 'min_bet', setting_value: { amount: settings.min_bet } },
-        { setting_key: 'max_bet', setting_value: { amount: settings.max_bet } },
-        { setting_key: 'round_duration', setting_value: { seconds: settings.round_duration } },
-        { setting_key: 'auto_cashout_limit', setting_value: { max_multiplier: settings.auto_cashout_limit } },
-        { setting_key: 'house_edge', setting_value: { percentage: settings.house_edge } },
-        { setting_key: 'max_players', setting_value: { count: settings.max_players } },
-        { setting_key: 'round_interval', setting_value: { seconds: settings.round_interval } },
-      ];
+      // Save each setting individually using update
+      const savePromises = [];
 
-      for (const update of updates) {
-        const { error } = await supabase
+      // Min Bet
+      savePromises.push(
+        supabase
           .from('game_settings')
-          .upsert(update);
+          .update({ setting_value: { amount: settings.min_bet } })
+          .eq('setting_key', 'min_bet')
+      );
 
-        if (error) throw error;
+      // Max Bet
+      savePromises.push(
+        supabase
+          .from('game_settings')
+          .update({ setting_value: { amount: settings.max_bet } })
+          .eq('setting_key', 'max_bet')
+      );
+
+      // Round Duration
+      savePromises.push(
+        supabase
+          .from('game_settings')
+          .update({ setting_value: { seconds: settings.round_duration } })
+          .eq('setting_key', 'round_duration')
+      );
+
+      // Auto Cashout Limit
+      savePromises.push(
+        supabase
+          .from('game_settings')
+          .update({ setting_value: { max_multiplier: settings.auto_cashout_limit } })
+          .eq('setting_key', 'auto_cashout_limit')
+      );
+
+      // House Edge
+      savePromises.push(
+        supabase
+          .from('game_settings')
+          .update({ setting_value: { percentage: settings.house_edge } })
+          .eq('setting_key', 'house_edge')
+      );
+
+      // Max Players
+      savePromises.push(
+        supabase
+          .from('game_settings')
+          .update({ setting_value: { count: settings.max_players } })
+          .eq('setting_key', 'max_players')
+      );
+
+      // Round Interval
+      savePromises.push(
+        supabase
+          .from('game_settings')
+          .update({ setting_value: { seconds: settings.round_interval } })
+          .eq('setting_key', 'round_interval')
+      );
+
+      // Execute all updates
+      const results = await Promise.all(savePromises);
+      
+      // Check for errors
+      const errors = results.filter(r => r.error);
+      if (errors.length > 0) {
+        throw new Error(errors[0].error?.message || 'Failed to save settings');
       }
 
       setMessage('✅ Settings saved successfully!');
