@@ -1,6 +1,6 @@
-import { createClient } from '@supabase/supabase-js'
+// Re-export the single shared Supabase client from the lib to avoid
+// creating multiple GoTrueClient instances in the same browser context.
+import { supabase } from '@/lib/supabase/client';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+export { supabase };
+export default supabase;
