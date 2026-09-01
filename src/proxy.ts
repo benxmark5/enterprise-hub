@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 export async function proxy(request: NextRequest) {
-  // Allow all requests to pass through
+  // Allow all requests - no redirects
   return NextResponse.next();
 }
 
