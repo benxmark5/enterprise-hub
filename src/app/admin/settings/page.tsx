@@ -7,7 +7,7 @@ import {
   ArrowLeft, RefreshCw, Loader2, Settings, 
   Globe, Users, DollarSign, Shield, Bell,
   Palette, Mail, Lock, Database, Server,
-  CheckCircle, AlertCircle, X
+  CheckCircle, AlertCircle, X, Save
 } from 'lucide-react';
 
 type AdminSettings = {
