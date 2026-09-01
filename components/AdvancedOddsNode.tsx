@@ -1,7 +1,7 @@
 "use client";
 import React, { useState, useEffect } from 'react';
 import { TrendingUp, TrendingDown, Send, Calculator, FileText } from 'lucide-react';
-import { supabase } from '@/lib/supabase/client/client';
+import { supabase } from '@/lib/supabase/client';
 
 type ApiMatch = {
   id: string;
