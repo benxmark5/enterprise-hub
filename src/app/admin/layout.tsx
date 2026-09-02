@@ -11,6 +11,7 @@ import {
   Zap,
   Gamepad2,
   BarChart3,
+  DollarSign,
   History,
   Settings,
   Menu,
@@ -20,9 +21,10 @@ import {
 
 const adminNav = [
   { label: 'Dashboard', href: '/admin', icon: LayoutDashboard },
+  { label: 'Customers', href: '/admin/customers', icon: Users },
+  { label: 'Financial Center', href: '/admin/financial', icon: DollarSign },
   { label: 'Events', href: '/events', icon: Calendar },
   { label: 'Ticketing', href: '/ticketing', icon: Ticket },
-  { label: 'Customers', href: '/customers', icon: Users },
   { label: 'Aviator', href: '/aviator', icon: Zap },
   { label: 'Crash Game', href: '/crash-game', icon: Gamepad2 },
   { label: 'Analytics', href: '/admin/analytics', icon: BarChart3 },
