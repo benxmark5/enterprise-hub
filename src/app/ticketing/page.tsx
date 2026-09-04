@@ -1,13 +1,13 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { supabase } from '@/app/supabase';
+import { supabase } from '@/lib/supabase/client';
 import Link from 'next/link';
 import {
   Ticket, Plus, RefreshCw, Loader2, ArrowLeft,
-  Search, Filter, X, CheckCircle, AlertCircle,
+  Search, X, CheckCircle, AlertCircle,
   Eye, Trash2, Download, Users, DollarSign,
-  Calendar, MapPin, QrCode, Copy, Edit2
+  Calendar
 } from 'lucide-react';
 
 type TicketTier = {
@@ -17,7 +17,6 @@ type TicketTier = {
   section_name: string;
   price: number;
   total_tickets: number;
-  sold_tickets: number;
   is_vip: boolean;
   includes_benefits: string[];
   max_purchase_per_user: number;
@@ -41,13 +40,19 @@ type Ticket = {
   price: number;
 };
 
+type Event = {
+  id: string;
+  title: string;
+  event_date: string;
+};
+
 export default function TicketingPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [tiers, setTiers] = useState<TicketTier[]>([]);
-  const [events, setEvents] = useState<any[]>([]);
+  const [events, setEvents] = useState<Event[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   
@@ -82,34 +87,38 @@ export default function TicketingPage() {
 
   const [benefitInput, setBenefitInput] = useState('');
 
-  // Load data
+  // Load data from database - NO HARDCODED DATA
   const loadData = async () => {
     try {
       setLoading(true);
       setError('');
 
-      // Load events
-      const { data: eventsData } = await supabase
+      // 1. Load events from Supabase
+      const { data: eventsData, error: eventsError } = await supabase
         .from('stadium_events')
         .select('id, title, event_date')
         .eq('is_deleted', false)
         .order('event_date', { ascending: true });
 
+      if (eventsError) throw eventsError;
       setEvents(eventsData || []);
 
-      // Load tiers
-      const { data: tiersData } = await supabase
+      // 2. Load tiers from Supabase
+      const { data: tiersData, error: tiersError } = await supabase
         .from('tickets_tiers')
         .select('*')
         .order('price', { ascending: true });
 
+      if (tiersError) throw tiersError;
       setTiers(tiersData || []);
 
-      // Load tickets with tier info
-      const { data: ticketsData } = await supabase
+      // 3. Load tickets with tier info
+      const { data: ticketsData, error: ticketsError } = await supabase
         .from('tickets')
         .select('*, tickets_tiers(tier_name, price)')
         .order('created_at', { ascending: false });
+
+      if (ticketsError) throw ticketsError;
 
       if (ticketsData) {
         const formatted = ticketsData.map((t: any) => ({
@@ -122,13 +131,13 @@ export default function TicketingPage() {
 
     } catch (err: any) {
       console.error('Error loading data:', err);
-      setError(err.message);
+      setError(err.message || 'Failed to load data');
     } finally {
       setLoading(false);
     }
   };
 
-  // Create Tier with Tickets
+  // Create Tier with Tickets - ALL DATA FROM FORM, NOT HARDCODED
   const createTier = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedEvent) {
@@ -140,7 +149,7 @@ export default function TicketingPage() {
     setError('');
 
     try {
-      // 1. Insert the tier
+      // Insert the tier using form data
       const { data: tierData, error: tierError } = await supabase
         .from('tickets_tiers')
         .insert([{
@@ -149,7 +158,6 @@ export default function TicketingPage() {
           section_name: newTier.section_name || 'General',
           price: newTier.price || 0,
           total_tickets: newTier.total_tickets || 0,
-          sold_tickets: 0,
           is_vip: newTier.is_vip || false,
           max_purchase_per_user: newTier.max_purchase_per_user || 10,
           includes_benefits: newTier.includes_benefits || [],
@@ -160,7 +168,7 @@ export default function TicketingPage() {
 
       if (tierError) throw tierError;
 
-      // 2. Generate individual tickets
+      // Generate individual tickets
       if (tierData && newTier.total_tickets > 0) {
         const ticketsToInsert = [];
         for (let i = 1; i <= newTier.total_tickets; i++) {
@@ -181,9 +189,9 @@ export default function TicketingPage() {
 
         if (ticketsError) throw ticketsError;
 
-        setSuccess(`Created ${newTier.total_tickets} tickets for ${newTier.tier_name || 'Standard'} tier`);
+        setSuccess(`✅ Created ${newTier.total_tickets} tickets for "${newTier.tier_name || 'Standard'}" tier`);
       } else {
-        setSuccess(`Created tier: ${newTier.tier_name || 'Standard'}`);
+        setSuccess(`✅ Created tier: "${newTier.tier_name || 'Standard'}"`);
       }
 
       setTimeout(() => setSuccess(''), 4000);
@@ -198,7 +206,7 @@ export default function TicketingPage() {
     }
   };
 
-  // Create Single Ticket
+  // Create Single Ticket - ALL FROM FORM, NOT HARDCODED
   const createSingleTicket = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedEvent) {
@@ -226,7 +234,7 @@ export default function TicketingPage() {
 
       if (error) throw error;
 
-      setSuccess('Ticket created successfully!');
+      setSuccess('✅ Ticket created successfully!');
       setTimeout(() => setSuccess(''), 4000);
       setShowAddTicket(false);
       resetTicketForm();
@@ -296,7 +304,7 @@ export default function TicketingPage() {
 
       if (error) throw error;
 
-      setSuccess(`Ticket ${status}`);
+      setSuccess(`✅ Ticket ${status}`);
       setTimeout(() => setSuccess(''), 3000);
       loadData();
     } catch (err: any) {
@@ -314,7 +322,7 @@ export default function TicketingPage() {
         .eq('id', id);
 
       if (error) throw error;
-      setSuccess('Ticket deleted');
+      setSuccess('✅ Ticket deleted');
       setTimeout(() => setSuccess(''), 3000);
       loadData();
     } catch (err: any) {
@@ -361,7 +369,7 @@ export default function TicketingPage() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-[#050505] text-white p-6">
+    <div className="min-h-screen bg-[#0A0A0F] text-white p-6">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="flex flex-wrap justify-between items-center gap-4 mb-8">
@@ -430,7 +438,7 @@ export default function TicketingPage() {
           </div>
         )}
 
-        {/* Stats */}
+        {/* Stats - ALL FROM DATABASE */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
           <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-4">
             <p className="text-xs text-zinc-500">Total Tickets</p>
@@ -451,6 +459,49 @@ export default function TicketingPage() {
           <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-4">
             <p className="text-xs text-zinc-500">Tiers</p>
             <p className="text-2xl font-black text-purple-400">{tiers.length}</p>
+          </div>
+        </div>
+
+        {/* Tiers Display - ALL FROM DATABASE */}
+        <div className="mb-6">
+          <h2 className="text-sm font-bold text-zinc-400 mb-3 flex items-center gap-2">
+            <Ticket size={16} />
+            Ticket Tiers
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {tiers.length === 0 ? (
+              <div className="col-span-3 text-center text-zinc-500 py-8">
+                No tiers created yet. Click "Add Tier" to create one.
+              </div>
+            ) : (
+              tiers.map((tier) => (
+                <div key={tier.id} className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-4">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <p className="font-bold text-white">{tier.tier_name}</p>
+                      <p className="text-sm text-zinc-400">{tier.section_name}</p>
+                    </div>
+                    {tier.is_vip && (
+                      <span className="text-xs bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded-full">VIP</span>
+                    )}
+                  </div>
+                  <div className="mt-3 flex items-center gap-4 text-sm">
+                    <span className="text-zinc-400">${tier.price}</span>
+                    <span className="text-zinc-400">•</span>
+                    <span className="text-zinc-400">{tier.total_tickets} tickets</span>
+                  </div>
+                  {tier.includes_benefits && tier.includes_benefits.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {tier.includes_benefits.map((benefit, i) => (
+                        <span key={i} className="text-xs bg-zinc-800 text-zinc-400 px-2 py-0.5 rounded-full">
+                          {benefit}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
           </div>
         </div>
 
@@ -479,7 +530,7 @@ export default function TicketingPage() {
           </select>
         </div>
 
-        {/* Tickets Table */}
+        {/* Tickets Table - ALL FROM DATABASE */}
         <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full">
@@ -556,7 +607,7 @@ export default function TicketingPage() {
         </div>
 
         {/* ============================================
-            ADD TIER MODAL
+            ADD TIER MODAL - ALL FROM FORM
         ============================================ */}
         {showAddTier && (
           <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
@@ -569,7 +620,6 @@ export default function TicketingPage() {
               </div>
 
               <form onSubmit={createTier} className="space-y-4">
-                {/* Event Selection */}
                 <div>
                   <label className="block text-sm text-zinc-400 mb-1">Event *</label>
                   <select
@@ -659,7 +709,6 @@ export default function TicketingPage() {
                   </div>
                 </div>
 
-                {/* Benefits */}
                 <div>
                   <label className="block text-sm text-zinc-400 mb-1">Benefits</label>
                   <div className="flex gap-2">
@@ -743,7 +792,7 @@ export default function TicketingPage() {
         )}
 
         {/* ============================================
-            ADD SINGLE TICKET MODAL
+            ADD SINGLE TICKET MODAL - ALL FROM FORM
         ============================================ */}
         {showAddTicket && (
           <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">

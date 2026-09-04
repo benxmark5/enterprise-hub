@@ -1,12 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/app/supabase';
 import { 
   Zap, Send, RefreshCw, CheckCircle, AlertTriangle, 
-  Trash2, X, Eye, TrendingUp, TrendingDown, 
-  BarChart3, Calendar, Download, Filter, 
-  Play, Pause, Clock, History, Shield
+  Trash2, X, Eye, History, Download
 } from 'lucide-react';
 
 type Signal = {
@@ -54,6 +52,7 @@ export default function AviatorAdminPage() {
   const [liveSignals, setLiveSignals] = useState<LiveSignal[]>([]);
   const [loadingLive, setLoadingLive] = useState(false);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   
   // NEW: Stats and Analytics
   const [stats, setStats] = useState<SignalStats>({
@@ -136,19 +135,6 @@ export default function AviatorAdminPage() {
     }
   };
 
-  // Auto-dispatch timer
-  useEffect(() => {
-    let interval: NodeJS.Timeout;
-    if (autoDispatch.enabled) {
-      interval = setInterval(() => {
-        if (signals.length > 0) {
-          dispatchSignals();
-        }
-      }, autoDispatch.interval * 60 * 1000);
-    }
-    return () => clearInterval(interval);
-  }, [autoDispatch.enabled, signals]);
-
   // Analyze pattern
   const analyze = async () => {
     if (!pattern.trim()) {
@@ -186,7 +172,7 @@ export default function AviatorAdminPage() {
   };
 
   // Dispatch signals
-  const dispatchSignals = async () => {
+  const dispatchSignals = useCallback(async () => {
     if (!signals.length) return;
     setDispatching(true);
     setError('');
@@ -244,7 +230,22 @@ export default function AviatorAdminPage() {
       loadLive();
     }
     setDispatching(false);
-  };
+  }, [signals]);
+
+  // Auto-dispatch timer
+  useEffect(() => {
+    let interval: NodeJS.Timeout | undefined;
+    if (autoDispatch.enabled) {
+      interval = setInterval(() => {
+        if (signals.length > 0) {
+          void dispatchSignals();
+        }
+      }, autoDispatch.interval * 60 * 1000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [autoDispatch.enabled, autoDispatch.interval, dispatchSignals, signals]);
 
   // Expire a signal
   const expire = async (id: string) => {
@@ -279,23 +280,49 @@ export default function AviatorAdminPage() {
 
   // NEW: Clear all live signals
   const clearAllSignals = async () => {
-    if (confirm('Are you sure you want to clear all live signals?')) {
-      const { error } = await supabase
+    if (!confirm('Are you sure you want to clear all live signals?')) {
+      return;
+    }
+
+    setError('');
+    setSuccess('');
+
+    try {
+      const { data, error } = await supabase
         .from('markets')
-        .update({ is_live: false, status: 'expired' })
+        .update({
+          is_live: false,
+          status: 'expired',
+          updated_at: new Date().toISOString(),
+        })
         .eq('league_name', 'AVIATOR')
-        .eq('is_live', true);
-      
-      if (!error) {
-        loadLive();
+        .eq('is_live', true)
+        .select();
+
+      if (error) throw error;
+
+      if (!data || data.length === 0) {
+        setError('No active Aviator signals found to clear.');
+        return;
       }
+
+      setSuccess('✅ All signals cleared successfully!');
+      setTimeout(() => setSuccess(''), 3000);
+      await loadLive();
+    } catch (error) {
+      console.error('Error clearing signals:', error);
+      setError('Failed to clear signals');
     }
   };
 
   // Load on mount
   useEffect(() => {
-    loadLive();
-    const interval = setInterval(loadLive, 30000);
+    const syncLive = () => {
+      void loadLive();
+    };
+
+    syncLive();
+    const interval = setInterval(syncLive, 30000);
     return () => clearInterval(interval);
   }, []);
 
@@ -378,6 +405,14 @@ export default function AviatorAdminPage() {
         )}
 
         {/* Success Notification */}
+        {success && (
+          <div className="bg-green-500/10 border border-green-500/20 rounded-xl p-4 mb-6 flex items-center gap-3 animate-pulse">
+            <CheckCircle size={16} className="text-green-400" />
+            <p className="text-green-400 text-sm font-bold">{success}</p>
+            <button onClick={() => setSuccess('')}><X size={14} className="text-zinc-500" /></button>
+          </div>
+        )}
+
         {dispatched && (
           <div className="bg-green-500/10 border border-green-500/20 rounded-xl p-4 mb-6 flex items-center gap-3 animate-pulse">
             <CheckCircle size={16} className="text-green-400" />
@@ -446,6 +481,15 @@ export default function AviatorAdminPage() {
                   <option value="LOW">Low</option>
                   <option value="MEDIUM">Medium</option>
                   <option value="HIGH">High</option>
+                </select>
+                <select
+                  value={filterStatus}
+                  onChange={(e) => setFilterStatus(e.target.value)}
+                  className="bg-zinc-800 border border-zinc-700 rounded-lg text-xs px-2 py-1 text-zinc-400"
+                >
+                  <option value="all">All Status</option>
+                  <option value="live">Live</option>
+                  <option value="expired">Expired</option>
                 </select>
                 <button
                   onClick={clearAllSignals}
