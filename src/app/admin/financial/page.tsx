@@ -1,219 +1,113 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase/client';
 import {
-  DollarSign,
-  Wallet,
-  CreditCard,
-  Send,
-  TrendingUp,
-  TrendingDown,
-  RefreshCw,
-  Loader2,
-  Search,
-  Eye,
-  CheckCircle,
-  XCircle,
-  Clock,
-  Filter,
-  Calendar,
-  Download,
-  ChevronRight,
-  Users,
-  ArrowUp,
-  ArrowDown,
-  BarChart3,
-  PieChart,
-  Activity
+  DollarSign, Wallet, TrendingUp, TrendingDown, RefreshCw,
+  Loader2, Search, Eye, Users, Activity, CheckCircle, Clock, XCircle,
 } from 'lucide-react';
 
-type Transaction = {
-  id: string;
+type WalletRow = {
   user_id: string;
-  amount: number;
-  type: 'deposit' | 'withdrawal' | 'transfer' | 'payment';
-  status: 'pending' | 'completed' | 'failed' | 'cancelled';
-  description: string;
-  created_at: string;
-  user_email?: string;
-  user_name?: string;
+  user_email: string | null;
+  user_name: string | null;
+  available_balance_usd: number;
+  pending_balance_usd: number;
+  total_deposited_usd: number;
+  total_withdrawn_usd: number;
+  last_deposit_at: string | null;
+  last_withdrawal_at: string | null;
+  wallet_created_at: string | null;
+  wallet_updated_at: string | null;
 };
 
-type FinancialStats = {
-  totalBalance: number;
-  totalDeposits: number;
-  totalWithdrawals: number;
-  totalTransfers: number;
-  pendingCount: number;
-  completedCount: number;
-  failedCount: number;
-  totalUsers: number;
-  activeUsers: number;
+type DepositRow = {
+  id: string;
+  reference: string;
+  user_email: string | null;
+  amount_usd: number;
+  amount_kes: number | null;
+  purpose: string;
+  tx_type: string;
+  status: string;
+  description: string;
+  created_at: string;
+};
+
+type Summary = {
+  total_deposits_usd: number;
+  total_withdrawals_usd: number;
+  pending_withdrawals_usd: number;
+  total_wallets: number;
+  funded_wallets: number;
+  today_deposits_usd: number;
+  week_deposits_usd: number;
+  month_deposits_usd: number;
+  expired_pending_count: number;
 };
 
 export default function FinancialCenter() {
   const [loading, setLoading] = useState(true);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [stats, setStats] = useState<FinancialStats>({
-    totalBalance: 0,
-    totalDeposits: 0,
-    totalWithdrawals: 0,
-    totalTransfers: 0,
-    pendingCount: 0,
-    completedCount: 0,
-    failedCount: 0,
-    totalUsers: 0,
-    activeUsers: 0,
-  });
+  const [summary, setSummary] = useState<Summary | null>(null);
+  const [wallets, setWallets] = useState<WalletRow[]>([]);
+  const [deposits, setDeposits] = useState<DepositRow[]>([]);
   const [search, setSearch] = useState('');
-  const [filterType, setFilterType] = useState('all');
-  const [filterStatus, setFilterStatus] = useState('all');
-  const [dateFilter, setDateFilter] = useState('all');
+  const [tab, setTab] = useState<'wallets' | 'deposits'>('wallets');
 
-  const loadFinancialData = async () => {
+  const load = useCallback(async () => {
+    setLoading(true);
     try {
-      setLoading(true);
+      const [sumRes, walRes, depRes] = await Promise.all([
+        supabase.from('admin_revenue_summary').select('*').single(),
+        supabase.from('admin_wallet_overview').select('*').order('wallet_updated_at', { ascending: false }),
+        supabase.from('admin_recent_deposits').select('*').limit(50),
+      ]);
 
-      // Get all wallet transactions
-      const { data: walletTxs, error: walletError } = await supabase
-        .from('wallet_transactions')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (walletError) throw walletError;
-
-      // Get user profiles
-      const { data: profiles } = await supabase
-        .from('profiles')
-        .select('id, email, full_name');
-
-      // Map transactions with user info
-      const mappedTxs = (walletTxs || []).map((tx: any) => {
-        const user = profiles?.find((p: any) => p.id === tx.user_id);
-        return {
-          ...tx,
-          user_email: user?.email,
-          user_name: user?.full_name,
-        };
-      });
-
-      setTransactions(mappedTxs);
-
-      // Calculate stats
-      const deposits = mappedTxs.filter((t: any) => t.type === 'deposit' && t.status === 'completed');
-      const withdrawals = mappedTxs.filter((t: any) => t.type === 'withdrawal' && t.status === 'completed');
-      const transfers = mappedTxs.filter((t: any) => t.type === 'transfer' && t.status === 'completed');
-      const pending = mappedTxs.filter((t: any) => t.status === 'pending');
-      const completed = mappedTxs.filter((t: any) => t.status === 'completed');
-      const failed = mappedTxs.filter((t: any) => t.status === 'failed');
-
-      const { data: wallets } = await supabase
-        .from('wallets')
-        .select('available_balance');
-
-      const totalBalance = wallets?.reduce((sum, w) => sum + (w.available_balance || 0), 0) || 0;
-
-      const { data: allProfiles } = await supabase
-        .from('profiles')
-        .select('id, created_at');
-
-      const totalUsers = allProfiles?.length || 0;
-      const activeUsers = allProfiles?.filter((p: any) => {
-        const weekAgo = new Date();
-        weekAgo.setDate(weekAgo.getDate() - 7);
-        return new Date(p.created_at) > weekAgo;
-      }).length || 0;
-
-      setStats({
-        totalBalance,
-        totalDeposits: deposits.reduce((sum: number, t: any) => sum + t.amount, 0),
-        totalWithdrawals: withdrawals.reduce((sum: number, t: any) => sum + t.amount, 0),
-        totalTransfers: transfers.reduce((sum: number, t: any) => sum + t.amount, 0),
-        pendingCount: pending.length,
-        completedCount: completed.length,
-        failedCount: failed.length,
-        totalUsers,
-        activeUsers,
-      });
-
-    } catch (error) {
-      console.error('Error loading financial data:', error);
+      if (sumRes.data) setSummary(sumRes.data as Summary);
+      if (walRes.data) setWallets(walRes.data as WalletRow[]);
+      if (depRes.data) setDeposits(depRes.data as DepositRow[]);
+    } catch (e) {
+      console.error('[financial] load failed:', e);
     } finally {
       setLoading(false);
     }
-  };
-
-  // Apply filters
-  const filteredTransactions = transactions.filter((tx) => {
-    // Search filter
-    const matchSearch = 
-      tx.user_email?.toLowerCase().includes(search.toLowerCase()) ||
-      tx.user_name?.toLowerCase().includes(search.toLowerCase()) ||
-      tx.id.toLowerCase().includes(search.toLowerCase());
-    
-    // Type filter
-    const matchType = filterType === 'all' || tx.type === filterType;
-    
-    // Status filter
-    const matchStatus = filterStatus === 'all' || tx.status === filterStatus;
-    
-    // Date filter
-    let matchDate = true;
-    const now = new Date();
-    const txDate = new Date(tx.created_at);
-    
-    switch (dateFilter) {
-      case 'today':
-        matchDate = txDate.toDateString() === now.toDateString();
-        break;
-      case 'week':
-        const weekAgo = new Date();
-        weekAgo.setDate(weekAgo.getDate() - 7);
-        matchDate = txDate >= weekAgo;
-        break;
-      case 'month':
-        const monthAgo = new Date();
-        monthAgo.setMonth(monthAgo.getMonth() - 1);
-        matchDate = txDate >= monthAgo;
-        break;
-      case 'year':
-        const yearAgo = new Date();
-        yearAgo.setFullYear(yearAgo.getFullYear() - 1);
-        matchDate = txDate >= yearAgo;
-        break;
-      default:
-        matchDate = true;
-    }
-    
-    return matchSearch && matchType && matchStatus && matchDate;
-  });
-
-  const getStatusBadge = (status: string) => {
-    const styles: Record<string, string> = {
-      pending: 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/20',
-      completed: 'bg-green-500/20 text-green-400 border border-green-500/20',
-      failed: 'bg-red-500/20 text-red-400 border border-red-500/20',
-      cancelled: 'bg-gray-500/20 text-gray-400 border border-gray-500/20',
-    };
-    return styles[status] || styles.pending;
-  };
-
-  const getTypeIcon = (type: string) => {
-    switch (type) {
-      case 'deposit': return <TrendingUp size={16} className="text-green-400" />;
-      case 'withdrawal': return <TrendingDown size={16} className="text-red-400" />;
-      case 'transfer': return <Send size={16} className="text-blue-400" />;
-      case 'payment': return <CreditCard size={16} className="text-purple-400" />;
-      default: return <DollarSign size={16} className="text-gray-400" />;
-    }
-  };
-
-  useEffect(() => {
-    loadFinancialData();
   }, []);
 
-  if (loading) {
+  useEffect(() => {
+    load();
+    const id = setInterval(load, 30000); // auto-refresh every 30s
+    return () => clearInterval(id);
+  }, [load]);
+
+  const filteredWallets = wallets.filter((w) => {
+    if (!search) return true;
+    const s = search.toLowerCase();
+    return (
+      w.user_email?.toLowerCase().includes(s) ||
+      w.user_name?.toLowerCase().includes(s) ||
+      w.user_id.toLowerCase().includes(s)
+    );
+  });
+
+  const filteredDeposits = deposits.filter((d) => {
+    if (!search) return true;
+    const s = search.toLowerCase();
+    return (
+      d.user_email?.toLowerCase().includes(s) ||
+      d.reference.toLowerCase().includes(s)
+    );
+  });
+
+  const statusBadge = (status: string) => {
+    switch (status) {
+      case 'completed': return 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20';
+      case 'pending':   return 'text-amber-400 bg-amber-500/10 border-amber-500/20';
+      case 'failed':    return 'text-red-400 bg-red-500/10 border-red-500/20';
+      default:          return 'text-zinc-400 bg-zinc-500/10 border-zinc-500/20';
+    }
+  };
+
+  if (loading && !summary) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <Loader2 className="w-8 h-8 animate-spin text-purple-500" />
@@ -222,202 +116,233 @@ export default function FinancialCenter() {
     );
   }
 
+  const s = summary ?? {
+    total_deposits_usd: 0, total_withdrawals_usd: 0, pending_withdrawals_usd: 0,
+    total_wallets: 0, funded_wallets: 0, today_deposits_usd: 0,
+    week_deposits_usd: 0, month_deposits_usd: 0, expired_pending_count: 0,
+  };
+
+  const netFlow = s.total_deposits_usd - s.total_withdrawals_usd;
+  const totalUserBalances = wallets.reduce((sum, w) => sum + w.available_balance_usd, 0);
+
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-white">💰 Financial Center</h1>
-          <p className="text-sm text-white/40">Complete financial overview and transaction monitoring</p>
+          <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+            <DollarSign size={22} className="text-emerald-400" /> Financial Center
+          </h1>
+          <p className="text-sm text-white/40">Platform-wide wallet and payment overview</p>
         </div>
         <button
-          onClick={loadFinancialData}
-          className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 rounded-xl text-sm font-bold transition"
+          onClick={load}
+          disabled={loading}
+          className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 rounded-xl text-sm font-bold transition disabled:opacity-50"
         >
           <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
           Refresh
         </button>
       </div>
 
-      {/* Stats Cards */}
+      {/* Top Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-white/5 rounded-2xl p-4 border border-white/5">
-          <p className="text-xs text-white/40 uppercase tracking-wider">Total Balance</p>
-          <p className="text-2xl font-bold text-green-400">${stats.totalBalance.toFixed(2)}</p>
-          <div className="flex items-center gap-2 mt-1">
-            <Users size={12} className="text-white/30" />
-            <span className="text-xs text-white/30">{stats.totalUsers} users</span>
-            <span className="text-xs text-green-400">• {stats.activeUsers} active</span>
-          </div>
-        </div>
-        <div className="bg-white/5 rounded-2xl p-4 border border-white/5">
-          <p className="text-xs text-white/40 uppercase tracking-wider">Total Deposits</p>
-          <p className="text-2xl font-bold text-blue-400">${stats.totalDeposits.toFixed(2)}</p>
-          <div className="flex items-center gap-2 mt-1">
-            <TrendingUp size={12} className="text-green-400" />
-            <span className="text-xs text-green-400">Revenue</span>
-          </div>
-        </div>
-        <div className="bg-white/5 rounded-2xl p-4 border border-white/5">
-          <p className="text-xs text-white/40 uppercase tracking-wider">Total Withdrawals</p>
-          <p className="text-2xl font-bold text-orange-400">${stats.totalWithdrawals.toFixed(2)}</p>
-          <div className="flex items-center gap-2 mt-1">
-            <TrendingDown size={12} className="text-red-400" />
-            <span className="text-xs text-red-400">Outflow</span>
-          </div>
-        </div>
-        <div className="bg-white/5 rounded-2xl p-4 border border-white/5">
-          <p className="text-xs text-white/40 uppercase tracking-wider">Net Flow</p>
-          <p className={`text-2xl font-bold ${stats.totalDeposits - stats.totalWithdrawals >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-            ${(stats.totalDeposits - stats.totalWithdrawals).toFixed(2)}
-          </p>
-          <div className="flex items-center gap-2 mt-1">
-            <Activity size={12} className="text-white/30" />
-            <span className="text-xs text-white/30">Platform balance</span>
-          </div>
-        </div>
+        <StatCard
+          label="Total Deposits"
+          value={`$${s.total_deposits_usd.toFixed(2)}`}
+          sub={`Today: $${s.today_deposits_usd.toFixed(2)}`}
+          color="text-emerald-400"
+          icon={<TrendingUp size={16} className="text-emerald-400" />}
+        />
+        <StatCard
+          label="Total Withdrawals"
+          value={`$${s.total_withdrawals_usd.toFixed(2)}`}
+          sub={`Pending: $${s.pending_withdrawals_usd.toFixed(2)}`}
+          color="text-red-400"
+          icon={<TrendingDown size={16} className="text-red-400" />}
+        />
+        <StatCard
+          label="Net Flow"
+          value={`${netFlow >= 0 ? '' : '-'}$${Math.abs(netFlow).toFixed(2)}`}
+          sub="Deposits − Withdrawals"
+          color={netFlow >= 0 ? 'text-emerald-400' : 'text-red-400'}
+          icon={<Activity size={16} className="text-white/40" />}
+        />
+        <StatCard
+          label="User Wallets"
+          value={`${s.total_wallets}`}
+          sub={`${s.funded_wallets} funded · $${totalUserBalances.toFixed(2)} held`}
+          color="text-blue-400"
+          icon={<Wallet size={16} className="text-blue-400" />}
+        />
       </div>
 
-      {/* Quick Stats */}
+      {/* Secondary stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <div className="bg-white/5 rounded-xl p-3 border border-white/5 text-center">
-          <p className="text-xs text-white/40">Pending</p>
-          <p className="text-xl font-bold text-yellow-400">{stats.pendingCount}</p>
-        </div>
-        <div className="bg-white/5 rounded-xl p-3 border border-white/5 text-center">
-          <p className="text-xs text-white/40">Completed</p>
-          <p className="text-xl font-bold text-green-400">{stats.completedCount}</p>
-        </div>
-        <div className="bg-white/5 rounded-xl p-3 border border-white/5 text-center">
-          <p className="text-xs text-white/40">Failed</p>
-          <p className="text-xl font-bold text-red-400">{stats.failedCount}</p>
-        </div>
-        <div className="bg-white/5 rounded-xl p-3 border border-white/5 text-center">
-          <p className="text-xs text-white/40">Transfers</p>
-          <p className="text-xl font-bold text-blue-400">{stats.totalTransfers}</p>
-        </div>
+        <MiniStat label="Deposits This Week" value={`$${s.week_deposits_usd.toFixed(2)}`} />
+        <MiniStat label="Deposits This Month" value={`$${s.month_deposits_usd.toFixed(2)}`} />
+        <MiniStat label="Pending Withdrawals" value={`$${s.pending_withdrawals_usd.toFixed(2)}`} />
+        <MiniStat
+          label="Expired Pending"
+          value={`${s.expired_pending_count}`}
+          color={s.expired_pending_count > 0 ? 'text-red-400' : 'text-white/60'}
+        />
       </div>
 
-      {/* Filters */}
-      <div className="flex flex-wrap gap-3">
-        <div className="flex-1 min-w-[200px] relative">
+      {/* Search + Tabs */}
+      <div className="flex flex-wrap gap-3 items-center">
+        <div className="flex-1 min-w-[220px] relative">
           <Search className="absolute left-3 top-2.5 text-white/30" size={16} />
           <input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by email or ID..."
+            placeholder="Search by email, name, or reference..."
             className="w-full pl-9 pr-4 py-2 bg-white/5 border border-white/10 rounded-xl text-white placeholder-white/30 focus:outline-none focus:ring-2 focus:ring-purple-500/40"
           />
         </div>
-
-        <select
-          value={filterType}
-          onChange={(e) => setFilterType(e.target.value)}
-          className="px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/40 cursor-pointer"
-        >
-          <option value="all">📊 All Types</option>
-          <option value="deposit">💰 Deposits</option>
-          <option value="withdrawal">🏦 Withdrawals</option>
-          <option value="transfer">🔄 Transfers</option>
-          <option value="payment">💳 Payments</option>
-        </select>
-
-        <select
-          value={filterStatus}
-          onChange={(e) => setFilterStatus(e.target.value)}
-          className="px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/40 cursor-pointer"
-        >
-          <option value="all">📌 All Status</option>
-          <option value="pending">⏳ Pending</option>
-          <option value="completed">✅ Completed</option>
-          <option value="failed">❌ Failed</option>
-          <option value="cancelled">🚫 Cancelled</option>
-        </select>
-
-        <select
-          value={dateFilter}
-          onChange={(e) => setDateFilter(e.target.value)}
-          className="px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/40 cursor-pointer"
-        >
-          <option value="all">📅 All Time</option>
-          <option value="today">📆 Today</option>
-          <option value="week">📊 This Week</option>
-          <option value="month">📈 This Month</option>
-          <option value="year">📉 This Year</option>
-        </select>
-
-        <button className="px-4 py-2 bg-white/5 hover:bg-white/10 rounded-xl text-sm text-white/40 transition flex items-center gap-2 border border-white/5">
-          <Download size={16} />
-          Export
-        </button>
-      </div>
-
-      {/* Transactions Table */}
-      <div className="bg-white/5 rounded-2xl border border-white/5 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-white/5">
-              <tr>
-                <th className="px-4 py-3 text-left text-xs font-bold text-white/40 uppercase tracking-wider">Type</th>
-                <th className="px-4 py-3 text-left text-xs font-bold text-white/40 uppercase tracking-wider">User</th>
-                <th className="px-4 py-3 text-left text-xs font-bold text-white/40 uppercase tracking-wider">Amount</th>
-                <th className="px-4 py-3 text-left text-xs font-bold text-white/40 uppercase tracking-wider">Status</th>
-                <th className="px-4 py-3 text-left text-xs font-bold text-white/40 uppercase tracking-wider">Date</th>
-                <th className="px-4 py-3 text-left text-xs font-bold text-white/40 uppercase tracking-wider">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-white/5">
-              {filteredTransactions.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-white/30">
-                    No transactions found
-                  </td>
-                </tr>
-              ) : (
-                filteredTransactions.map((tx) => (
-                  <tr key={tx.id} className="hover:bg-white/5 transition">
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        {getTypeIcon(tx.type)}
-                        <span className="text-sm capitalize">{tx.type}</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div>
-                        <p className="text-sm font-bold text-white">{tx.user_name || 'Unknown'}</p>
-                        <p className="text-xs text-white/30">{tx.user_email}</p>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`text-sm font-bold ${
-                        tx.type === 'deposit' ? 'text-green-400' :
-                        tx.type === 'withdrawal' ? 'text-red-400' :
-                        'text-blue-400'
-                      }`}>
-                        {tx.type === 'deposit' ? '+' : '-'}${tx.amount.toFixed(2)}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`text-xs font-bold px-2 py-1 rounded-full ${getStatusBadge(tx.status)}`}>
-                        {tx.status.toUpperCase()}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-sm text-white/40">
-                      {new Date(tx.created_at).toLocaleString()}
-                    </td>
-                    <td className="px-4 py-3">
-                      <button className="p-1.5 bg-white/5 hover:bg-white/10 rounded-lg transition">
-                        <Eye size={14} className="text-white/40 hover:text-white" />
-                      </button>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setTab('wallets')}
+            className={`px-4 py-2 rounded-xl text-sm font-bold transition ${
+              tab === 'wallets'
+                ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
+                : 'bg-white/5 text-white/50 hover:text-white border border-white/5'
+            }`}
+          >
+            <Wallet size={14} className="inline mr-1.5" /> Wallets ({wallets.length})
+          </button>
+          <button
+            onClick={() => setTab('deposits')}
+            className={`px-4 py-2 rounded-xl text-sm font-bold transition ${
+              tab === 'deposits'
+                ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
+                : 'bg-white/5 text-white/50 hover:text-white border border-white/5'
+            }`}
+          >
+            <TrendingUp size={14} className="inline mr-1.5" /> Deposits ({deposits.length})
+          </button>
         </div>
       </div>
+
+      {/* Tables */}
+      {tab === 'wallets' ? (
+        <div className="bg-white/5 rounded-2xl border border-white/5 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-white/5">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-bold text-white/40 uppercase">User</th>
+                  <th className="px-4 py-3 text-right text-xs font-bold text-white/40 uppercase">Available</th>
+                  <th className="px-4 py-3 text-right text-xs font-bold text-white/40 uppercase">Pending</th>
+                  <th className="px-4 py-3 text-right text-xs font-bold text-white/40 uppercase">Deposited</th>
+                  <th className="px-4 py-3 text-right text-xs font-bold text-white/40 uppercase">Withdrawn</th>
+                  <th className="px-4 py-3 text-left text-xs font-bold text-white/40 uppercase">Last Activity</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {filteredWallets.length === 0 ? (
+                  <tr><td colSpan={6} className="px-4 py-8 text-center text-white/30">No wallets found</td></tr>
+                ) : filteredWallets.map((w) => (
+                  <tr key={w.user_id} className="hover:bg-white/5 transition">
+                    <td className="px-4 py-3">
+                      <p className="text-sm font-bold text-white">{w.user_name || 'Unknown'}</p>
+                      <p className="text-xs text-white/40">{w.user_email || w.user_id.slice(0, 8)}</p>
+                    </td>
+                    <td className="px-4 py-3 text-right font-bold text-emerald-400">
+                      ${w.available_balance_usd.toFixed(2)}
+                    </td>
+                    <td className="px-4 py-3 text-right text-amber-400">
+                      ${w.pending_balance_usd.toFixed(2)}
+                    </td>
+                    <td className="px-4 py-3 text-right text-white/60">
+                      ${w.total_deposited_usd.toFixed(2)}
+                    </td>
+                    <td className="px-4 py-3 text-right text-white/60">
+                      ${w.total_withdrawn_usd.toFixed(2)}
+                    </td>
+                    <td className="px-4 py-3 text-xs text-white/40">
+                      {w.last_deposit_at
+                        ? new Date(w.last_deposit_at).toLocaleString()
+                        : w.wallet_updated_at
+                          ? new Date(w.wallet_updated_at).toLocaleString()
+                          : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : (
+        <div className="bg-white/5 rounded-2xl border border-white/5 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-white/5">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-bold text-white/40 uppercase">Reference</th>
+                  <th className="px-4 py-3 text-left text-xs font-bold text-white/40 uppercase">User</th>
+                  <th className="px-4 py-3 text-right text-xs font-bold text-white/40 uppercase">USD</th>
+                  <th className="px-4 py-3 text-right text-xs font-bold text-white/40 uppercase">KES</th>
+                  <th className="px-4 py-3 text-left text-xs font-bold text-white/40 uppercase">Status</th>
+                  <th className="px-4 py-3 text-left text-xs font-bold text-white/40 uppercase">Date</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {filteredDeposits.length === 0 ? (
+                  <tr><td colSpan={6} className="px-4 py-8 text-center text-white/30">No deposits found</td></tr>
+                ) : filteredDeposits.map((d) => (
+                  <tr key={d.id} className="hover:bg-white/5 transition">
+                    <td className="px-4 py-3 text-xs text-white/50 font-mono">{d.reference}</td>
+                    <td className="px-4 py-3 text-xs text-white/70">{d.user_email || '—'}</td>
+                    <td className="px-4 py-3 text-right font-bold text-emerald-400">
+                      ${d.amount_usd.toFixed(2)}
+                    </td>
+                    <td className="px-4 py-3 text-right text-white/40 text-xs">
+                      {d.amount_kes ? `KES ${d.amount_kes.toFixed(0)}` : '—'}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase border ${statusBadge(d.status)}`}>
+                        {d.status}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-xs text-white/40">
+                      {new Date(d.created_at).toLocaleString()}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ------------------------------------------------------------
+function StatCard({
+  label, value, sub, color, icon,
+}: {
+  label: string; value: string; sub: string; color: string; icon: React.ReactNode;
+}) {
+  return (
+    <div className="bg-white/5 rounded-2xl p-4 border border-white/5">
+      <div className="flex items-center justify-between mb-1">
+        <p className="text-xs text-white/40 uppercase tracking-wider font-bold">{label}</p>
+        {icon}
+      </div>
+      <p className={`text-2xl font-black ${color}`}>{value}</p>
+      <p className="text-xs text-white/30 mt-1">{sub}</p>
+    </div>
+  );
+}
+
+function MiniStat({ label, value, color = 'text-white/60' }: { label: string; value: string; color?: string }) {
+  return (
+    <div className="bg-white/5 rounded-xl p-3 border border-white/5">
+      <p className="text-xs text-white/40">{label}</p>
+      <p className={`text-lg font-bold mt-1 ${color}`}>{value}</p>
     </div>
   );
 }
