@@ -1,12 +1,12 @@
-﻿'use client';
+﻿// src/app/admin/withdrawals/page.tsx
+'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, type ReactElement } from 'react';
 import { supabase } from '@/lib/supabase/client';
-import { formatCurrency } from '@/lib/currency/config';
-import { formatDateTime } from '@/lib/utils';
+import { useAuth } from '@/context/AuthContext';
 import {
   Loader2, RefreshCw, Clock, CheckCircle, XCircle, AlertCircle,
-  Banknote, Mail, User, ExternalLink, ShieldAlert, Zap
+  Banknote, Mail, User as UserIcon, Zap, ShieldAlert, ChevronRight,
 } from 'lucide-react';
 
 type Pending = {
@@ -19,6 +19,7 @@ type Pending = {
   payout_method: string;
   payout_name: string;
   payout_identifier: string;
+  payout_extra: string | null;
   reference: string;
   status: string;
   created_at: string;
@@ -45,24 +46,23 @@ type HistoryRow = {
   audit_entries: number;
 };
 
-export default function WithdrawalsPage() {
+type Tab = 'pending' | 'history';
+
+export default function WithdrawalsPage(): ReactElement {
+  const { user } = useAuth();
   const [pending, setPending] = useState<Pending[]>([]);
   const [history, setHistory] = useState<HistoryRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  const [tab, setTab] = useState<'pending' | 'history'>('pending');
+  const [tab, setTab] = useState<Tab>('pending');
   const [, forceTick] = useState(0);
 
-  // Get current admin email — adjust to however your admin app stores it
-  const getAdminEmail = () => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('admin_email') || 'admin@globalhub.com';
-    }
-    return 'admin@globalhub.com';
-  };
+  const adminEmail = user?.email || 'admin@globalhub.com';
+  const adminId = user?.id || null;
 
+  // ── Load data ──
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
@@ -88,34 +88,34 @@ export default function WithdrawalsPage() {
     }
   }, []);
 
+  // ── Auto-refresh + countdown ticker ──
   useEffect(() => {
     load();
-    // Auto-refresh every 15 seconds
-    const id = setInterval(load, 15000);
-    // Local tick for the countdown display
-    const tick = setInterval(() => forceTick((t) => t + 1), 1000);
+    const refreshInterval = setInterval(load, 15000);
+    const tickInterval = setInterval(() => forceTick(t => t + 1), 1000);
     return () => {
-      clearInterval(id);
-      clearInterval(tick);
+      clearInterval(refreshInterval);
+      clearInterval(tickInterval);
     };
   }, [load]);
 
+  // ── Actions ──
   const approve = async (id: string) => {
-    if (!confirm('Approve this withdrawal? You can still reject it before marking as paid.')) return;
+    if (!confirm('Approve this withdrawal? Send the money externally, then click "Mark Paid".')) return;
     setBusyId(id);
     setError('');
     setSuccess('');
     try {
       const { data, error: rpcErr } = await supabase.rpc('admin_approve_withdrawal', {
         p_withdrawal_id: id,
-        p_actor_email: getAdminEmail(),
-        p_actor_id: null,
+        p_actor_email: adminEmail,
+        p_actor_id: adminId,
         p_note: 'Approved for payout',
       });
       if (rpcErr) throw rpcErr;
       const r = data as { ok?: boolean; error?: string } | null;
       if (!r?.ok) throw new Error(r?.error || 'Approval failed');
-      setSuccess('Withdrawal approved. Send the money via Paystack, then click "Mark Paid".');
+      setSuccess('Withdrawal approved. Send the money, then click "Mark Paid".');
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Approval failed');
@@ -133,8 +133,8 @@ export default function WithdrawalsPage() {
     try {
       const { data, error: rpcErr } = await supabase.rpc('admin_complete_withdrawal', {
         p_withdrawal_id: id,
-        p_actor_email: getAdminEmail(),
-        p_actor_id: null,
+        p_actor_email: adminEmail,
+        p_actor_id: adminId,
         p_note: note || 'Paid',
       });
       if (rpcErr) throw rpcErr;
@@ -162,9 +162,9 @@ export default function WithdrawalsPage() {
     try {
       const { data, error: rpcErr } = await supabase.rpc('admin_reject_withdrawal', {
         p_withdrawal_id: id,
-        p_actor_email: getAdminEmail(),
+        p_actor_email: adminEmail,
         p_reason: reason.trim(),
-        p_actor_id: null,
+        p_actor_id: adminId,
       });
       if (rpcErr) throw rpcErr;
       const r = data as { ok?: boolean; error?: string } | null;
@@ -178,18 +178,19 @@ export default function WithdrawalsPage() {
     }
   };
 
+  // ── Helpers ──
   const fmtCountdown = (sec: number) => {
     if (sec <= 0) return 'EXPIRED';
     const m = Math.floor(sec / 60);
     const s = sec % 60;
-    return `${m}m ${s.toString().padStart(2, '0')}s`;
+    return `${m}:${s.toString().padStart(2, '0')}`;
   };
 
   const statusColor = (status: string) => {
     switch (status) {
       case 'pending':  return 'text-amber-400 bg-amber-500/10 border-amber-500/20';
       case 'approved': return 'text-blue-400 bg-blue-500/10 border-blue-500/20';
-      case 'paid':     return 'text-green-400 bg-green-500/10 border-green-500/20';
+      case 'paid':     return 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20';
       case 'rejected': return 'text-red-400 bg-red-500/10 border-red-500/20';
       case 'expired':  return 'text-zinc-400 bg-zinc-500/10 border-zinc-500/20';
       default:         return 'text-zinc-400 bg-zinc-500/10 border-zinc-500/20';
@@ -205,7 +206,7 @@ export default function WithdrawalsPage() {
             <Banknote size={22} className="text-emerald-400" /> Withdrawals
           </h1>
           <p className="text-sm text-white/40">
-            Pending queue processes automatically. Admin SLA: 5 minutes. Auto-expire: 1 hour.
+            Approve, mark paid, or reject pending payouts.
           </p>
         </div>
         <button
@@ -218,7 +219,7 @@ export default function WithdrawalsPage() {
         </button>
       </div>
 
-      {/* Alerts */}
+      {/* Banners */}
       {error && (
         <div className="flex items-start gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-xl">
           <AlertCircle size={18} className="text-red-400 flex-shrink-0 mt-0.5" />
@@ -238,13 +239,16 @@ export default function WithdrawalsPage() {
       <div className="flex gap-2 border-b border-white/10">
         <button
           onClick={() => setTab('pending')}
-          className={`px-4 py-2 text-sm font-bold transition border-b-2 -mb-[1px] ${
+          className={`px-4 py-2 text-sm font-bold transition border-b-2 -mb-[1px] flex items-center gap-2 ${
             tab === 'pending'
               ? 'text-amber-400 border-amber-400'
               : 'text-white/40 border-transparent hover:text-white/60'
           }`}
         >
-          Pending Queue {pending.length > 0 && <span className="ml-1 px-1.5 py-0.5 bg-amber-500/20 rounded-md text-xs">{pending.length}</span>}
+          Pending Queue
+          {pending.length > 0 && (
+            <span className="px-1.5 py-0.5 bg-amber-500/20 rounded-md text-xs">{pending.length}</span>
+          )}
         </button>
         <button
           onClick={() => setTab('history')}
@@ -258,6 +262,7 @@ export default function WithdrawalsPage() {
         </button>
       </div>
 
+      {/* Content */}
       {loading && pending.length === 0 && history.length === 0 ? (
         <div className="flex items-center justify-center py-12">
           <Loader2 className="w-6 h-6 animate-spin text-emerald-400" />
@@ -280,9 +285,9 @@ export default function WithdrawalsPage() {
   );
 }
 
-// ------------------------------------------------------------
+// ─────────────────────────────────────────────────────────
 // Pending queue
-// ------------------------------------------------------------
+// ─────────────────────────────────────────────────────────
 function PendingList({
   items, busyId, fmtCountdown, statusColor, onApprove, onComplete, onReject,
 }: {
@@ -293,7 +298,7 @@ function PendingList({
   onApprove: (id: string) => void;
   onComplete: (id: string) => void;
   onReject: (id: string) => void;
-}) {
+}): ReactElement {
   if (items.length === 0) {
     return (
       <div className="glass-card p-8 text-center">
@@ -311,6 +316,7 @@ function PendingList({
         const busy = busyId === w.id;
         const canApprove = !expired && w.status === 'pending';
         const canComplete = !expired && (w.status === 'pending' || w.status === 'approved');
+
         return (
           <div
             key={w.id}
@@ -323,7 +329,7 @@ function PendingList({
               <div className="flex-1 min-w-[220px]">
                 <div className="flex items-baseline gap-3 flex-wrap">
                   <span className="text-2xl font-black text-white">
-                    {formatCurrency(w.amount_usd)}
+                    ${w.amount_usd.toFixed(2)}
                   </span>
                   <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider border ${statusColor(w.status)}`}>
                     {w.status}
@@ -337,7 +343,7 @@ function PendingList({
 
                 <div className="mt-2 flex flex-col gap-1 text-sm">
                   <div className="flex items-center gap-2 text-white/60">
-                    <User size={12} /> <span>{w.user_name || 'Unknown'}</span>
+                    <UserIcon size={12} /> <span>{w.user_name || 'Unknown'}</span>
                   </div>
                   <div className="flex items-center gap-2 text-white/40 text-xs">
                     <Mail size={12} /> <span>{w.user_email || '—'}</span>
@@ -351,9 +357,12 @@ function PendingList({
               {/* Middle: payout details */}
               <div className="min-w-[200px]">
                 <p className="text-xs text-white/40 uppercase font-bold tracking-wider mb-1">Payout</p>
-                <p className="text-sm text-white/80 font-semibold">{w.payout_method}</p>
+                <p className="text-sm text-white/80 font-semibold capitalize">{w.payout_method.replace('_', ' ')}</p>
                 <p className="text-sm text-white/60">{w.payout_name}</p>
                 <p className="text-xs text-white/40 font-mono">{w.payout_identifier}</p>
+                {w.payout_extra && (
+                  <p className="text-xs text-white/40 font-mono">{w.payout_extra}</p>
+                )}
               </div>
 
               {/* Right: countdown + actions */}
@@ -366,7 +375,7 @@ function PendingList({
                     {fmtCountdown(w.seconds_remaining)}
                   </p>
                   <p className="text-[10px] text-white/30">
-                    Created {formatDateTime(w.created_at)}
+                    {new Date(w.created_at).toLocaleString()}
                   </p>
                 </div>
 
@@ -403,15 +412,15 @@ function PendingList({
   );
 }
 
-// ------------------------------------------------------------
+// ─────────────────────────────────────────────────────────
 // History list
-// ------------------------------------------------------------
+// ─────────────────────────────────────────────────────────
 function HistoryList({
   items, statusColor,
 }: {
   items: HistoryRow[];
   statusColor: (s: string) => string;
-}) {
+}): ReactElement {
   if (items.length === 0) {
     return (
       <div className="glass-card p-8 text-center text-white/30">
@@ -438,13 +447,13 @@ function HistoryList({
             {items.map((w) => (
               <tr key={w.id} className="hover:bg-white/5 transition">
                 <td className="px-4 py-3 font-bold text-white">
-                  {formatCurrency(w.amount_usd)}
+                  ${w.amount_usd.toFixed(2)}
                 </td>
                 <td className="px-4 py-3">
                   <p className="text-sm text-white/70">{w.user_email || '—'}</p>
                 </td>
                 <td className="px-4 py-3">
-                  <p className="text-sm text-white/70">{w.payout_method}</p>
+                  <p className="text-sm text-white/70 capitalize">{w.payout_method.replace('_', ' ')}</p>
                   <p className="text-xs text-white/40 font-mono">{w.payout_identifier}</p>
                 </td>
                 <td className="px-4 py-3">
@@ -456,7 +465,7 @@ function HistoryList({
                   {w.reviewed_by || '—'}
                 </td>
                 <td className="px-4 py-3 text-xs text-white/40">
-                  {formatDateTime(w.created_at)}
+                  {new Date(w.created_at).toLocaleString()}
                 </td>
               </tr>
             ))}
