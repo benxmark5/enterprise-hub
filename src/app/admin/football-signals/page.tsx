@@ -73,6 +73,14 @@ const MARKET_TYPES = [
   { value: 'corners', label: 'Corners' },
   { value: 'cards', label: 'Cards' },
 ];
+const KICKOFF_TIMES = [
+  '00:00', '01:00', '02:00', '03:00', '04:00', '05:00',
+  '06:00', '07:00', '08:00', '09:00', '10:00', '11:00',
+  '12:00', '13:00', '14:00', '15:00', '15:30', '16:00',
+  '16:30', '17:00', '17:30', '18:00', '18:30', '19:00',
+  '19:30', '20:00', '20:30', '21:00', '21:30', '22:00',
+  '22:30', '23:00', '23:30',
+];
 
 const STATUS_BADGE: Record<MarketStatus, { label: string; cls: string }> = {
   draft:       { label: 'Draft',       cls: 'bg-zinc-500/20 text-zinc-300 border-zinc-500/30' },
@@ -420,8 +428,13 @@ function MarketForm({
   const [league, setLeague] = useState(editingMarket?.league ?? LEAGUES[0]);
   const [homeTeam, setHomeTeam] = useState(editingMarket?.home_team ?? '');
   const [awayTeam, setAwayTeam] = useState(editingMarket?.away_team ?? '');
-  const [kickoffAt, setKickoffAt] = useState(
-    editingMarket?.kickoff_at ? toLocalInput(editingMarket.kickoff_at) : ''
+    const [kickoffDate, setKickoffDate] = useState(
+    editingMarket?.kickoff_at ? new Date(editingMarket.kickoff_at).toISOString().slice(0, 10) : ''
+  );
+  const [kickoffTime, setKickoffTime] = useState(
+    editingMarket?.kickoff_at
+      ? new Date(editingMarket.kickoff_at).toTimeString().slice(0, 5)
+      : ''
   );
   const [venue, setVenue] = useState(editingMarket?.venue ?? '');
   const [homeLogo, setHomeLogo] = useState(editingMarket?.home_logo ?? '');
@@ -438,11 +451,7 @@ function MarketForm({
 
   const clubs = LEAGUE_CLUBS[league] ?? [];
 
-  function toLocalInput(iso: string): string {
-    const d = new Date(iso);
-    const tz = d.getTimezoneOffset() * 60000;
-    return new Date(d.getTime() - tz).toISOString().slice(0, 16);
-  }
+ 
 
   const submit = async (status: MarketStatus) => {
     onError('');
@@ -455,12 +464,12 @@ function MarketForm({
       onError('Home and Away teams must be different');
       return;
     }
-    if (!kickoffAt) {
-      onError('Kickoff date/time is required');
+    if (!kickoffDate) {
+      onError('Please pick a kickoff date');
       return;
     }
-    if (!pick.trim()) {
-      onError('The pick/selection is required');
+    if (!kickoffTime) {
+      onError('Please pick a kickoff time');
       return;
     }
     const oddsNum = Number(odds);
@@ -476,7 +485,10 @@ function MarketForm({
 
     setSaving(true);
     try {
-      const kickoffIso = new Date(kickoffAt).toISOString();
+            // Combine date + time as UTC (admin should enter UTC times for now)
+      const [year, month, day] = kickoffDate.split('-').map(Number);
+      const [hour, minute] = kickoffTime.split(':').map(Number);
+      const kickoffIso = new Date(Date.UTC(year, month - 1, day, hour, minute, 0)).toISOString();
       const country = COUNTRIES[league] ?? null;
 
       const payload: Record<string, unknown> = {
@@ -558,9 +570,29 @@ function MarketForm({
           </select>
         </Field>
 
-        {/* Kickoff */}
-        <Field label="Kickoff (date + time, UTC)">
-          <input type="datetime-local" value={kickoffAt} onChange={e => setKickoffAt(e.target.value)} className="form-input" />
+               {/* Kickoff Date */}
+        <Field label="Kickoff Date (UTC)">
+          <input
+            type="date"
+            value={kickoffDate}
+            onChange={e => setKickoffDate(e.target.value)}
+            className="form-input"
+            style={{ colorScheme: 'dark' }}
+          />
+        </Field>
+
+        {/* Kickoff Time */}
+        <Field label="Kickoff Time (UTC)">
+          <select
+            value={kickoffTime}
+            onChange={e => setKickoffTime(e.target.value)}
+            className="form-input"
+          >
+            <option value="">Pick a time...</option>
+            {KICKOFF_TIMES.map(t => (
+              <option key={t} value={t}>{t}</option>
+            ))}
+          </select>
         </Field>
 
         {/* Home */}
