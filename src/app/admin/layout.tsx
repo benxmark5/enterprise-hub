@@ -3,25 +3,40 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabase/client';
+import { useRouter, usePathname } from 'next/navigation';
 import {
-  LayoutDashboard, Calendar, Ticket, Users, Zap, Gamepad2,
-  BarChart3, DollarSign, History, Settings, Menu, X,
-  Loader2, LogOut, ShieldAlert,
+  LayoutDashboard,
+  Calendar,
+  Ticket,
+  Users,
+  Zap,
+  Gamepad2,
+  BarChart3,
+  DollarSign,
+  History,
+  Settings,
+  Menu,
+  X,
+  Sparkles,
+  Loader2,
+  Target,
+  ShieldAlert,
+  LogOut,
 } from 'lucide-react';
+import { supabase } from '@/lib/supabase/client';
 
 const adminNav = [
-  { label: 'Dashboard',       href: '/admin',              icon: LayoutDashboard },
-  { label: 'Customers',       href: '/admin/customers',    icon: Users },
-  { label: 'Financial Center',href: '/admin/financial',    icon: DollarSign },
-  { label: 'Events',          href: '/events',             icon: Calendar },
-  { label: 'Ticketing',       href: '/ticketing',          icon: Ticket },
-  { label: 'Aviator',         href: '/aviator',            icon: Zap },
-  { label: 'Crash Game',      href: '/crash-game',         icon: Gamepad2 },
-  { label: 'Analytics',       href: '/admin/analytics',    icon: BarChart3 },
-  { label: 'Audit Logs',      href: '/admin/audit-logs',   icon: History },
-  { label: 'Settings',        href: '/admin/settings',     icon: Settings },
+  { label: 'Dashboard',         href: '/admin',                  icon: LayoutDashboard },
+  { label: 'Customers',         href: '/admin/customers',        icon: Users },
+  { label: 'Financial Center',  href: '/admin/financial',        icon: DollarSign },
+  { label: 'Football Signals',  href: '/admin/football-signals', icon: Target },
+  { label: 'Events',            href: '/events',                 icon: Calendar },
+  { label: 'Ticketing',         href: '/ticketing',              icon: Ticket },
+  { label: 'Aviator',           href: '/aviator',                icon: Zap },
+  { label: 'Crash Game',        href: '/crash-game',             icon: Gamepad2 },
+  { label: 'Analytics',         href: '/admin/analytics',        icon: BarChart3 },
+  { label: 'Audit Logs',        href: '/admin/audit-logs',       icon: History },
+  { label: 'Settings',          href: '/admin/settings',         icon: Settings },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -143,6 +158,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             <button
               onClick={() => setSidebarOpen(!sidebarOpen)}
               className="p-1.5 rounded-lg hover:bg-white/10 transition text-white/40"
+              type="button"
             >
               {sidebarOpen ? <X size={16} /> : <Menu size={16} />}
             </button>
@@ -186,6 +202,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             </div>
             <button
               onClick={handleSignOut}
+              type="button"
               className="w-full flex items-center justify-center gap-2 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-300 rounded-lg text-xs font-bold transition border border-red-500/20"
             >
               <LogOut size={14} />
