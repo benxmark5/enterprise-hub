@@ -1,737 +1,752 @@
+// src/app/aviator/page.tsx
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, type ReactElement } from 'react';
 import { supabase } from '@/app/supabase';
-import { 
-  Zap, Send, RefreshCw, CheckCircle, AlertTriangle, 
-  Trash2, X, Eye, History, Download
+import { useAuth } from '@/context/AuthContext';
+import {
+  Zap, Send, RefreshCw, CheckCircle, AlertTriangle,
+  Trash2, Eye, EyeOff, History, Sparkles, Pause, Play,
+  Settings, ChevronDown, BarChart3,
 } from 'lucide-react';
 
-type Signal = {
+// ─────────────────────────────────────────────────────────
+// Types
+// ─────────────────────────────────────────────────────────
+type EngineSignal = {
   entry_point: number;
   exit_point: number;
   confidence: number;
-  risk_level: string;
+  risk_level: 'LOW' | 'MEDIUM' | 'HIGH';
   signal_notes: string;
   suggested_price: number;
 };
 
-type LiveSignal = {
+type Batch = {
   id: string;
-  entry_point: number;
-  exit_point: number;
-  confidence: number;
-  risk_level?: string;
-  signal_notes: string;
-  price: number;
-  expires_at: string;
-  status: string;
+  name: string | null;
+  sample_size: number;
+  median_crash: number | null;
+  mu: number | null;
+  sigma: number | null;
+  volatility: string | null;
+  trend: string | null;
+  min_confidence: number | null;
+  signal_count: number | null;
+  price_usd: number | null;
+  status: 'draft' | 'published' | 'expired' | 'archived';
+  published_at: string | null;
+  expires_at: string | null;
   created_at: string;
 };
 
-type SignalStats = {
-  totalSignals: number;
-  liveSignals: number;
-  averageConfidence: number;
-  hitRate: number;
-  totalRevenue: number;
-  signalsByRisk: {
-    low: number;
-    medium: number;
-    high: number;
-  };
+type SignalRow = {
+  id: string;
+  batch_id: string;
+  entry_point: number;
+  exit_point: number;
+  confidence: number;
+  risk_level: string;
+  signal_notes: string | null;
+  suggested_price: number | null;
+  round_number: number | null;
+  result_status: 'pending' | 'won' | 'lost' | 'void';
+  position: number;
 };
 
-export default function AviatorAdminPage() {
-  // Existing states
+const SAMPLE = '4.35x 5.06x 1.70x 1.10x 1.04x 3.09x 10.32x 6.74x 2.27x 1.58x 1.72x 5.31x 1.15x 3.15x 36.85x 5.98x 1.71x 1.05x 4.55x 1.23x 1.88x 2.10x 3.40x 2.90x 1.30x 4.20x 1.50x 2.60x 1.90x 3.10x';
+
+const RISK_COLORS: Record<string, string> = {
+  LOW: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
+  MEDIUM: 'bg-amber-500/15 text-amber-300 border-amber-500/30',
+  HIGH: 'bg-red-500/15 text-red-300 border-red-500/30',
+};
+
+const STATUS_COLORS: Record<string, string> = {
+  draft: 'bg-zinc-500/15 text-zinc-300 border-zinc-500/30',
+  published: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
+  expired: 'bg-red-500/15 text-red-300 border-red-500/30',
+  archived: 'bg-zinc-500/15 text-zinc-400 border-zinc-500/30',
+};
+
+// ─────────────────────────────────────────────────────────
+// Main page
+// ─────────────────────────────────────────────────────────
+export default function AviatorAdminPage(): ReactElement {
+  const { user } = useAuth();
+
   const [pattern, setPattern] = useState('');
   const [analyzing, setAnalyzing] = useState(false);
-  const [signals, setSignals] = useState<Signal[]>([]);
-  const [dispatching, setDispatching] = useState(false);
-  const [dispatched, setDispatched] = useState(false);
-  const [liveSignals, setLiveSignals] = useState<LiveSignal[]>([]);
-  const [loadingLive, setLoadingLive] = useState(false);
+  const [pullingFromGame, setPullingFromGame] = useState(false);
+  const [signals, setSignals] = useState<EngineSignal[]>([]);
+  const [metadata, setMetadata] = useState<Record<string, unknown> | null>(null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  
-  // NEW: Stats and Analytics
-  const [stats, setStats] = useState<SignalStats>({
-    totalSignals: 0,
-    liveSignals: 0,
-    averageConfidence: 0,
-    hitRate: 0,
-    totalRevenue: 0,
-    signalsByRisk: { low: 0, medium: 0, high: 0 }
-  });
-  
-  // NEW: Auto-dispatch settings
+
+  const [signalCount, setSignalCount] = useState(5);
+  const [minConfidence, setMinConfidence] = useState(60);
+  const [packPrice, setPackPrice] = useState('10.00');
+  const [packName, setPackName] = useState('');
+
   const [autoDispatch, setAutoDispatch] = useState({
     enabled: false,
-    interval: 15,
-    maxSignals: 10,
+    intervalMin: 15,
+    paused: false,
   });
-  
-  // NEW: Signal history
-  const [signalHistory, setSignalHistory] = useState<LiveSignal[]>([]);
-  const [showHistory, setShowHistory] = useState(false);
-  
-  // NEW: Filter states
-  const [filterRisk, setFilterRisk] = useState<string>('all');
-  const [filterStatus, setFilterStatus] = useState<string>('all');
 
-  const SAMPLE = '4.35x 5.06x 1.70x 1.10x 1.04x 3.09x 10.32x 6.74x 2.27x 1.58x 1.72x 5.31x 1.15x 3.15x 36.85x 5.98x 1.71x 1.05x 4.55x 1.23x 1.88x';
+  const [batches, setBatches] = useState<Batch[]>([]);
+  const [loadingBatches, setLoadingBatches] = useState(false);
+  const [busyBatchId, setBusyBatchId] = useState<string | null>(null);
+  const [expandedBatch, setExpandedBatch] = useState<string | null>(null);
+  const [batchSignals, setBatchSignals] = useState<Record<string, SignalRow[]>>({});
 
-  // Load live signals and stats
-  const loadLive = async () => {
-    setLoadingLive(true);
+  // ── Load batches ──
+  const loadBatches = useCallback(async () => {
+    setLoadingBatches(true);
     try {
-      // Load live signals
-      const { data: liveData } = await supabase
-        .from('markets')
+      const { data } = await supabase
+        .from('aviator_batches')
         .select('*')
-        .eq('league_name', 'AVIATOR')
-        .eq('is_live', true)
         .order('created_at', { ascending: false })
-        .limit(20);
-      setLiveSignals(liveData || []);
-
-      // Load signal history
-      const { data: historyData } = await supabase
-        .from('markets')
-        .select('*')
-        .eq('league_name', 'AVIATOR')
-        .order('created_at', { ascending: false })
-        .limit(50);
-      setSignalHistory(historyData || []);
-
-      // Calculate stats
-      if (historyData) {
-        const total = historyData.length;
-        const live = historyData.filter(s => s.is_live).length;
-        const avgConf = historyData.reduce((acc, s) => acc + (s.confidence || 0), 0) / total || 0;
-        const completed = historyData.filter(s => s.status === 'completed').length;
-        const hitRate = total > 0 ? (completed / total) * 100 : 0;
-        const revenue = historyData.reduce((acc, s) => acc + (s.price || 0), 0);
-
-        const byRisk = {
-          low: historyData.filter(s => s.risk_level === 'LOW').length,
-          medium: historyData.filter(s => s.risk_level === 'MEDIUM').length,
-          high: historyData.filter(s => s.risk_level === 'HIGH').length,
-        };
-
-        setStats({
-          totalSignals: total,
-          liveSignals: live,
-          averageConfidence: avgConf,
-          hitRate,
-          totalRevenue: revenue,
-          signalsByRisk: byRisk,
-        });
-      }
-    } catch (e) {
-      console.error('Error loading signals:', e);
-    } finally {
-      setLoadingLive(false);
+        .limit(30);
+      setBatches((data ?? []) as Batch[]);
+    } catch { /* silent */ } finally {
+      setLoadingBatches(false);
     }
-  };
+  }, []);
 
-  // Analyze pattern
-  const analyze = async () => {
-    if (!pattern.trim()) {
-      setError('Paste round history numbers first');
-      return;
-    }
+  useEffect(() => { loadBatches(); }, [loadBatches]);
+
+  // ── Analyze pasted pattern ──
+  const handleAnalyze = async () => {
     setAnalyzing(true);
     setError('');
+    setSuccess('');
     setSignals([]);
+    setMetadata(null);
     try {
-      const res = await fetch('https://enterprise-backend-osh7.onrender.com/analyze', {
+      const res = await fetch('/aviator/api', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pattern: pattern.trim() }),
+        body: JSON.stringify({
+          pattern,
+          count: signalCount,
+          minConfidence,
+        }),
       });
-
-      const contentType = res.headers.get("content-type");
-      if (!contentType || !contentType.includes("application/json")) {
-        setError(`Server returned non-JSON response (${res.status})`);
-        return;
-      }
-
       const data = await res.json();
       if (!data.success) {
-        setError(data.error || 'Analysis failed');
-        return;
+        setError(data.error || 'Engine failed');
+      } else {
+        setSignals(data.signals as EngineSignal[]);
+        setMetadata(data.metadata ?? null);
       }
-      setSignals(data.signals || []);
-      setDispatched(false);
     } catch (e) {
-      setError('Error communicating with backend: ' + String(e));
+      setError(e instanceof Error ? e.message : 'Network error');
     } finally {
       setAnalyzing(false);
     }
   };
 
-  // Dispatch signals
-  const dispatchSignals = useCallback(async () => {
-    if (!signals.length) return;
-    setDispatching(true);
+  // ── Pull from live game and analyze ──
+  const handlePullFromGame = async () => {
+    setPullingFromGame(true);
     setError('');
-    
-    const TARGET_COUNT = 10;
-    let finalSignals = [...signals];
-
-    if (finalSignals.length < TARGET_COUNT) {
-      let index = 0;
-      while (finalSignals.length < TARGET_COUNT) {
-        const baseSignal = signals[index % signals.length];
-        const variance = (Math.random() * 0.15) - 0.05;
-        const newExit = Math.max(1.10, +(baseSignal.exit_point + variance).toFixed(2));
-        finalSignals.push({
-          ...baseSignal,
-          exit_point: newExit,
-          confidence: Math.min(95, Math.max(60, baseSignal.confidence - Math.floor(Math.random() * 5)))
-        });
-        index++;
+    setSuccess('');
+    setSignals([]);
+    setMetadata(null);
+    try {
+      const res = await fetch('/aviator/api', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          source: 'auto',
+          sampleSize: 50,
+          count: signalCount,
+          minConfidence,
+        }),
+      });
+      const data = await res.json();
+      if (!data.success) {
+        setError(data.error || 'Engine failed');
+      } else {
+        setSignals(data.signals as EngineSignal[]);
+        setMetadata(data.metadata ?? null);
+        const sampleSize = String((data.metadata as { sample_size?: number })?.sample_size ?? 50);
+        setPattern(`(auto-pulled ${sampleSize} rounds from live game)`);
+        setSuccess(`Pulled ${sampleSize} rounds from live game and generated signals.`);
       }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Network error');
+    } finally {
+      setPullingFromGame(false);
     }
-
-    if (finalSignals.length > 12) {
-      finalSignals = finalSignals.slice(0, 12);
-    }
-    
-    const exp = new Date(Date.now() + 20 * 60 * 1000).toISOString();
-    
-    const rows = finalSignals.map(s => ({
-      name: 'AVIATOR - Signal',
-      league_name: 'AVIATOR',
-      market_type: 'aviator',
-      entry_point: +s.entry_point,
-      exit_point: +s.exit_point,
-      confidence: +s.confidence,
-      signal_notes: s.signal_notes,
-      price: +s.suggested_price || 5,
-      daily_price: +s.suggested_price || 5,
-      odds: +s.exit_point,
-      is_live: true,
-      status: 'live',
-      home_team: 'AVIATOR',
-      away_team: 'SIGNAL',
-      expires_at: exp,
-      risk_level: s.risk_level || 'MEDIUM',
-    }));
-    
-    const { error: e } = await supabase.from('markets').insert(rows);
-    if (e) {
-      setError('Dispatch failed: ' + e.message);
-    } else {
-      setDispatched(true);
-      setSignals([]);
-      setPattern('');
-      loadLive();
-    }
-    setDispatching(false);
-  }, [signals]);
-
-  // Auto-dispatch timer
-  useEffect(() => {
-    let interval: NodeJS.Timeout | undefined;
-    if (autoDispatch.enabled) {
-      interval = setInterval(() => {
-        if (signals.length > 0) {
-          void dispatchSignals();
-        }
-      }, autoDispatch.interval * 60 * 1000);
-    }
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [autoDispatch.enabled, autoDispatch.interval, dispatchSignals, signals]);
-
-  // Expire a signal
-  const expire = async (id: string) => {
-    await supabase.from('markets')
-      .update({ is_live: false, status: 'expired' })
-      .eq('id', id);
-    loadLive();
   };
 
-  // NEW: Export signals
-  const exportSignals = (format: 'csv' | 'json') => {
-    const data = format === 'csv' 
-      ? liveSignals.map(s => `${s.entry_point},${s.exit_point},${s.confidence},${s.signal_notes}`).join('\n')
-      : JSON.stringify(liveSignals, null, 2);
-    
-    const blob = new Blob([data], { type: format === 'csv' ? 'text/csv' : 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `aviator-signals.${format}`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  // NEW: Toggle auto-dispatch
-  const toggleAutoDispatch = () => {
-    setAutoDispatch(prev => ({
-      ...prev,
-      enabled: !prev.enabled
-    }));
-  };
-
-  // NEW: Clear all live signals
-  const clearAllSignals = async () => {
-    if (!confirm('Are you sure you want to clear all live signals?')) {
+  // ── Create batch from current signals ──
+  const handleCreateBatch = async (publishNow: boolean) => {
+    if (!user || signals.length === 0) return;
+    const priceNum = Number(packPrice);
+    if (!Number.isFinite(priceNum) || priceNum <= 0) {
+      setError('Enter a valid price');
       return;
     }
 
     setError('');
     setSuccess('');
-
     try {
-      const { data, error } = await supabase
-        .from('markets')
-        .update({
-          is_live: false,
-          status: 'expired',
-          updated_at: new Date().toISOString(),
+      const batchName = packName.trim() || `Pack of ${signals.length} · ${new Date().toLocaleString()}`;
+      const meta = (metadata ?? {}) as Record<string, unknown>;
+
+      const { data: batchRow, error: batchErr } = await supabase
+        .from('aviator_batches')
+        .insert({
+          name: batchName,
+          sample_size: Number(meta.sample_size ?? 0),
+          median_crash: meta.median_crash != null ? Number(meta.median_crash) : null,
+          mu: meta.mu != null ? Number(meta.mu) : null,
+          sigma: meta.sigma != null ? Number(meta.sigma) : null,
+          volatility: meta.volatility ?? null,
+          trend: meta.trend ?? null,
+          min_confidence: minConfidence,
+          signal_count: signals.length,
+          price_usd: priceNum,
+          status: publishNow ? 'published' : 'draft',
+          published_at: publishNow ? new Date().toISOString() : null,
+          expires_at: new Date(Date.now() + 20 * 60 * 1000).toISOString(),
+          created_by: user.id,
         })
-        .eq('league_name', 'AVIATOR')
-        .eq('is_live', true)
-        .select();
+        .select()
+        .single();
 
-      if (error) throw error;
+      if (batchErr || !batchRow) throw batchErr ?? new Error('Batch insert failed');
 
-      if (!data || data.length === 0) {
-        setError('No active Aviator signals found to clear.');
-        return;
-      }
+      const signalRows = signals.map((s, i) => ({
+        batch_id: batchRow.id,
+        entry_point: s.entry_point,
+        exit_point: s.exit_point,
+        confidence: s.confidence,
+        risk_level: s.risk_level,
+        signal_notes: s.signal_notes,
+        suggested_price: s.suggested_price,
+        position: i,
+        result_status: 'pending' as const,
+      }));
 
-      setSuccess('✅ All signals cleared successfully!');
-      setTimeout(() => setSuccess(''), 3000);
-      await loadLive();
-    } catch (error) {
-      console.error('Error clearing signals:', error);
-      setError('Failed to clear signals');
+      const { error: sigErr } = await supabase.from('aviator_signals').insert(signalRows);
+      if (sigErr) throw sigErr;
+
+      setSuccess(`Batch created${publishNow ? ' and published' : ''} successfully.`);
+      setSignals([]);
+      setMetadata(null);
+      setPattern('');
+      setPackName('');
+      await loadBatches();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Create batch failed');
     }
   };
 
-  // Load on mount
-  useEffect(() => {
-    const syncLive = () => {
-      void loadLive();
-    };
+  // ── Change batch status ──
+  const changeBatchStatus = async (b: Batch, newStatus: 'draft' | 'published' | 'expired' | 'archived') => {
+    setBusyBatchId(b.id);
+    setError('');
+    try {
+      const patch: Record<string, unknown> = {
+        status: newStatus,
+        updated_at: new Date().toISOString(),
+      };
+      if (newStatus === 'published' && !b.published_at) {
+        patch.published_at = new Date().toISOString();
+      }
+      const { error: err } = await supabase.from('aviator_batches').update(patch).eq('id', b.id);
+      if (err) throw err;
+      setSuccess(`Batch ${newStatus}.`);
+      await loadBatches();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Update failed');
+    } finally {
+      setBusyBatchId(null);
+    }
+  };
 
-    syncLive();
-    const interval = setInterval(syncLive, 30000);
-    return () => clearInterval(interval);
-  }, []);
+  // ── Delete batch ──
+  const deleteBatch = async (b: Batch) => {
+    if (!confirm(`Delete batch "${b.name}"? This cannot be undone.`)) return;
+    setBusyBatchId(b.id);
+    setError('');
+    try {
+      const { error: err } = await supabase.from('aviator_batches').delete().eq('id', b.id);
+      if (err) throw err;
+      setSuccess('Batch deleted.');
+      await loadBatches();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Delete failed');
+    } finally {
+      setBusyBatchId(null);
+    }
+  };
 
-  const riskColor = (r: string) =>
-    r === 'LOW' ? '#22c55e' : r === 'MEDIUM' ? '#fbbf24' : '#f87171';
+  // ── Expand batch ──
+  const toggleBatchSignals = async (batchId: string) => {
+    if (expandedBatch === batchId) { setExpandedBatch(null); return; }
+    setExpandedBatch(batchId);
+    if (batchSignals[batchId]) return;
+    try {
+      const { data } = await supabase
+        .from('aviator_signals')
+        .select('*')
+        .eq('batch_id', batchId)
+        .order('position');
+      setBatchSignals(prev => ({ ...prev, [batchId]: (data ?? []) as SignalRow[] }));
+    } catch { /* silent */ }
+  };
 
-  const filteredSignals = liveSignals.filter(s => {
-    const matchRisk = filterRisk === 'all' || s.risk_level === filterRisk;
-    const matchStatus = filterStatus === 'all' || s.status === filterStatus;
-    return matchRisk && matchStatus;
-  });
+  // ── Mark signal result ──
+  const markSignalResult = async (signalId: string, batchId: string, newResult: 'pending' | 'won' | 'lost' | 'void') => {
+    try {
+      const { error: err } = await supabase
+        .from('aviator_signals')
+        .update({
+          result_status: newResult,
+          result_updated_at: new Date().toISOString(),
+          result_updated_by: user?.id ?? null,
+        })
+        .eq('id', signalId);
+      if (err) throw err;
+      setBatchSignals(prev => ({
+        ...prev,
+        [batchId]: prev[batchId].map(s => s.id === signalId ? { ...s, result_status: newResult } : s),
+      }));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Update failed');
+    }
+  };
+
+  const stats = {
+    totalBatches: batches.length,
+    publishedBatches: batches.filter(b => b.status === 'published').length,
+    totalSignals: batches.reduce((s, b) => s + (b.signal_count ?? 0), 0),
+    revenue: batches.reduce((s, b) => s + (b.price_usd ?? 0), 0),
+  };
 
   return (
-    <div className="min-h-screen bg-[#050505] text-white font-sans p-6">
-      <div className="max-w-7xl mx-auto">
-
-        {/* Header */}
-        <div className="flex items-center justify-between mb-8">
-          <div className="flex items-center gap-4">
-            <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl">
-              <Zap size={24} className="text-red-400" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-black">Aviator Signal Engine</h1>
-              <p className="text-zinc-500 text-sm">Paste round history → Python processes → Dispatch</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <button
-              onClick={loadLive}
-              disabled={loadingLive}
-              className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-xl text-sm transition"
-            >
-              <RefreshCw size={16} className={loadingLive ? 'animate-spin' : ''} />
-              Refresh
-            </button>
-            <button
-              onClick={() => setShowHistory(!showHistory)}
-              className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-xl text-sm transition"
-            >
-              <History size={16} />
-              History
-            </button>
-          </div>
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+            <Zap size={22} className="text-emerald-400" /> Aviator Signal Engine
+          </h1>
+          <p className="text-sm text-white/40">
+            Pull live rounds or paste history → Engine generates signals → Publish as a batch.
+          </p>
         </div>
+        <button
+          type="button"
+          onClick={loadBatches}
+          disabled={loadingBatches}
+          className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 rounded-xl text-sm font-bold transition disabled:opacity-50"
+        >
+          <RefreshCw size={16} className={loadingBatches ? 'animate-spin' : ''} />
+          Refresh
+        </button>
+      </div>
 
-        {/* Stats Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-          <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-4">
-            <p className="text-xs text-zinc-500">Total Signals</p>
-            <p className="text-2xl font-black">{stats.totalSignals}</p>
-            <p className="text-xs text-green-400">{stats.liveSignals} live</p>
-          </div>
-          <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-4">
-            <p className="text-xs text-zinc-500">Avg Confidence</p>
-            <p className="text-2xl font-black text-yellow-400">{stats.averageConfidence.toFixed(1)}%</p>
-            <div className="w-full h-1 bg-zinc-800 mt-1 rounded-full overflow-hidden">
-              <div className="h-full bg-yellow-400 rounded-full" style={{ width: `${stats.averageConfidence}%` }} />
-            </div>
-          </div>
-          <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-4">
-            <p className="text-xs text-zinc-500">Hit Rate</p>
-            <p className="text-2xl font-black text-green-400">{stats.hitRate.toFixed(1)}%</p>
-            <p className="text-xs text-zinc-500">Success rate</p>
-          </div>
-          <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-4">
-            <p className="text-xs text-zinc-500">Revenue</p>
-            <p className="text-2xl font-black text-blue-400">${stats.totalRevenue.toFixed(0)}</p>
-            <p className="text-xs text-zinc-500">From signal sales</p>
-          </div>
+      {/* Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <StatCard label="Total Batches" value={stats.totalBatches} />
+        <StatCard label="Published" value={stats.publishedBatches} color="text-emerald-400" />
+        <StatCard label="Total Signals" value={stats.totalSignals} color="text-blue-400" />
+        <StatCard label="Total Value" value={`$${stats.revenue.toFixed(2)}`} color="text-amber-400" />
+      </div>
+
+      {/* Banners */}
+      {error && (
+        <div className="flex items-start gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-xl">
+          <AlertTriangle size={18} className="text-red-400 flex-shrink-0 mt-0.5" />
+          <p className="text-sm text-red-300 flex-1">{error}</p>
+          <button onClick={() => setError('')} className="text-red-400 hover:text-red-300" type="button">×</button>
         </div>
+      )}
+      {success && (
+        <div className="flex items-start gap-2 p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl">
+          <CheckCircle size={18} className="text-emerald-400 flex-shrink-0 mt-0.5" />
+          <p className="text-sm text-emerald-300 flex-1">{success}</p>
+          <button onClick={() => setSuccess('')} className="text-emerald-400 hover:text-emerald-300" type="button">×</button>
+        </div>
+      )}
 
-        {/* Error Notification */}
-        {error && (
-          <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 mb-6 flex items-center gap-3">
-            <AlertTriangle size={16} className="text-red-400" />
-            <p className="text-red-400 text-sm flex-1">{error}</p>
-            <button onClick={() => setError('')}><X size={14} className="text-zinc-500" /></button>
-          </div>
-        )}
+      {/* Two-column */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* LEFT */}
+        <div className="glass-card p-5 space-y-3">
+          <h3 className="text-white font-bold flex items-center gap-2 mb-2">
+            <BarChart3 size={16} className="text-emerald-400" /> Step 1 — Get Round History
+          </h3>
+          <p className="text-white/40 text-xs">
+            Pull the last 50 rounds automatically, or paste your own. Space-separated.
+          </p>
 
-        {/* Success Notification */}
-        {success && (
-          <div className="bg-green-500/10 border border-green-500/20 rounded-xl p-4 mb-6 flex items-center gap-3 animate-pulse">
-            <CheckCircle size={16} className="text-green-400" />
-            <p className="text-green-400 text-sm font-bold">{success}</p>
-            <button onClick={() => setSuccess('')}><X size={14} className="text-zinc-500" /></button>
-          </div>
-        )}
-
-        {dispatched && (
-          <div className="bg-green-500/10 border border-green-500/20 rounded-xl p-4 mb-6 flex items-center gap-3 animate-pulse">
-            <CheckCircle size={16} className="text-green-400" />
-            <p className="text-green-400 text-sm font-bold">✅ Signals dispatched! Active for 20 minutes.</p>
-          </div>
-        )}
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-
-          {/* Input Block */}
-          <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-6">
-            <p className="text-xs font-bold uppercase tracking-widest text-zinc-500 mb-3">
-              Step 1 — Paste Round History Numbers
-            </p>
-            <p className="text-zinc-400 text-xs mb-3 leading-relaxed">
-              Open Aviator → Round History → Copy the multipliers → Paste below:
-            </p>
-            <textarea
-              value={pattern}
-              onChange={e => setPattern(e.target.value)}
-              placeholder={`Paste numbers here e.g:\n${SAMPLE}`}
-              rows={6}
-              className="w-full bg-zinc-950 border border-zinc-700 text-white p-4 rounded-xl text-sm resize-none placeholder:text-zinc-600 outline-none focus:border-red-500/50 font-mono mb-3"
-            />
-            <div className="flex gap-2 mb-4">
-              <button
-                type="button"
-                onClick={() => setPattern(SAMPLE)}
-                className="text-xs text-zinc-500 hover:text-zinc-300"
-              >
-                → Use sample data to test
-              </button>
-            </div>
+          <div className="flex items-center gap-4 flex-wrap">
             <button
               type="button"
-              onClick={analyze}
-              disabled={analyzing || !pattern.trim()}
-              className={`w-full py-4 rounded-xl font-black text-sm uppercase tracking-wider flex items-center justify-center gap-2 transition-all ${
-                analyzing || !pattern.trim()
-                  ? 'bg-zinc-800 text-zinc-600 cursor-not-allowed'
-                  : 'bg-red-500 hover:bg-red-400 text-white'
-              }`}
+              onClick={handlePullFromGame}
+              disabled={pullingFromGame}
+              className="text-sm text-blue-300 hover:text-blue-200 flex items-center gap-1.5 disabled:opacity-50 font-bold bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 px-3 py-2 rounded-lg transition"
             >
-              {analyzing ? (
-                <><RefreshCw size={16} className="animate-spin" /> Analyzing...</>
+              {pullingFromGame ? (
+                <><RefreshCw size={13} className="animate-spin" /> Pulling...</>
               ) : (
-                <><Zap size={16} /> Generate Signals</>
+                <><Zap size={13} /> Pull last 50 rounds from live game</>
               )}
+            </button>
+            <button
+              type="button"
+              onClick={() => setPattern(SAMPLE)}
+              className="text-xs text-emerald-400 hover:text-emerald-300"
+            >
+              → Use sample data
             </button>
           </div>
 
-          {/* Live Signals Block */}
-          <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-6">
-            <div className="flex items-center justify-between mb-4">
-              <p className="text-xs font-bold uppercase tracking-widest text-zinc-500 flex items-center gap-2">
-                <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
-                Live Signals ({filteredSignals.length})
-              </p>
-              <div className="flex gap-2">
-                <select
-                  value={filterRisk}
-                  onChange={(e) => setFilterRisk(e.target.value)}
-                  className="bg-zinc-800 border border-zinc-700 rounded-lg text-xs px-2 py-1 text-zinc-400"
-                >
-                  <option value="all">All Risk</option>
-                  <option value="LOW">Low</option>
-                  <option value="MEDIUM">Medium</option>
-                  <option value="HIGH">High</option>
-                </select>
-                <select
-                  value={filterStatus}
-                  onChange={(e) => setFilterStatus(e.target.value)}
-                  className="bg-zinc-800 border border-zinc-700 rounded-lg text-xs px-2 py-1 text-zinc-400"
-                >
-                  <option value="all">All Status</option>
-                  <option value="live">Live</option>
-                  <option value="expired">Expired</option>
-                </select>
-                <button
-                  onClick={clearAllSignals}
-                  className="text-xs text-red-400 hover:text-red-300 px-2 py-1 bg-red-500/10 rounded-lg"
-                >
-                  Clear All
-                </button>
-              </div>
-            </div>
+          <textarea
+            value={pattern}
+            onChange={e => setPattern(e.target.value)}
+            placeholder="Paste multipliers here, or click the button above to auto-fill..."
+            rows={6}
+            className="form-input"
+            style={{ fontFamily: 'monospace', resize: 'vertical' }}
+          />
 
-            {filteredSignals.length === 0 ? (
-              <div className="text-center py-8">
-                <Eye size={28} className="text-zinc-700 mx-auto mb-2" />
-                <p className="text-zinc-600 text-xs">No live signals</p>
-              </div>
-            ) : (
-              <div className="space-y-2 max-h-96 overflow-y-auto">
-                {filteredSignals.map(s => (
-                  <div key={s.id}
-                    className="bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 flex items-center justify-between hover:bg-zinc-900 transition">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3">
-                        <span className="text-green-400 font-black font-mono text-sm">{s.entry_point}x</span>
-                        <span className="text-zinc-600">→</span>
-                        <span className="text-red-400 font-black font-mono text-sm">{s.exit_point}x</span>
-                        <span className="text-[10px] bg-zinc-800 text-zinc-400 px-2 py-0.5 rounded-full">{s.confidence}%</span>
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full`}
-                          style={{ background: `${riskColor(s.risk_level || 'MEDIUM')}20`, color: riskColor(s.risk_level || 'MEDIUM') }}>
-                          {s.risk_level || 'MEDIUM'}
-                        </span>
-                      </div>
-                      <p className="text-zinc-600 text-xs mt-1">
-                        Exp: {new Date(s.expires_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </p>
-                    </div>
-                    <div className="flex gap-2">
-                      <button 
-                        type="button" 
-                        onClick={() => expire(s.id)}
-                        className="text-xs bg-red-500/10 text-red-400 border border-red-500/20 px-3 py-1 rounded-lg hover:bg-red-500/20 transition"
-                      >
-                        Expire
-                      </button>
-                    </div>
-                  </div>
-                ))}
+          {/* Controls */}
+          <div className="border-t border-white/10 pt-3 mt-3">
+            <h4 className="text-white font-bold flex items-center gap-2 mb-3 text-sm">
+              <Settings size={14} className="text-emerald-400" /> Step 2 — Engine Controls
+            </h4>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Signals per Batch">
+                <input
+                  type="number"
+                  min="2"
+                  max="8"
+                  value={signalCount}
+                  onChange={e => setSignalCount(Math.max(2, Math.min(8, Number(e.target.value))))}
+                  className="form-input"
+                />
+              </Field>
+              <Field label="Min Confidence (%)">
+                <input
+                  type="number"
+                  min="40"
+                  max="95"
+                  value={minConfidence}
+                  onChange={e => setMinConfidence(Math.max(40, Math.min(95, Number(e.target.value))))}
+                  className="form-input"
+                />
+              </Field>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleAnalyze}
+            disabled={analyzing || !pattern.trim() || pattern.startsWith('(auto-pulled')}
+            className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-black rounded-xl text-sm font-black transition disabled:opacity-50"
+          >
+            {analyzing ? <><RefreshCw size={16} className="animate-spin" /> Analyzing...</> : <><Sparkles size={16} /> Generate Signals</>}
+          </button>
+
+          {/* Auto-dispatch */}
+          <div className="border-t border-white/10 pt-3 mt-3">
+            <div className="flex items-center justify-between mb-2">
+              <h4 className="text-white font-bold flex items-center gap-2 text-sm">
+                <Pause size={14} className="text-amber-400" /> Auto-dispatch
+              </h4>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={autoDispatch.enabled}
+                  onChange={e => setAutoDispatch(p => ({ ...p, enabled: e.target.checked }))}
+                  className="w-4 h-4"
+                />
+                <span className="text-xs text-white/60">Enabled</span>
+              </label>
+            </div>
+            {autoDispatch.enabled && (
+              <div className="flex gap-2">
+                <Field label="Every (min)">
+                  <input
+                    type="number"
+                    min="5"
+                    max="180"
+                    value={autoDispatch.intervalMin}
+                    onChange={e => setAutoDispatch(p => ({ ...p, intervalMin: Number(e.target.value) }))}
+                    className="form-input"
+                  />
+                </Field>
+                <button
+                  type="button"
+                  onClick={() => setAutoDispatch(p => ({ ...p, paused: !p.paused }))}
+                  className={`flex items-end gap-1 px-3 py-2 rounded-lg text-xs font-bold transition ${
+                    autoDispatch.paused
+                      ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
+                      : 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
+                  }`}
+                >
+                  {autoDispatch.paused ? <><Play size={12} /> Resume</> : <><Pause size={12} /> Pause</>}
+                </button>
               </div>
             )}
           </div>
         </div>
 
-        {/* Auto-Dispatch Controls */}
-        <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-4 mb-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2">
+        {/* RIGHT */}
+        <div className="glass-card p-5 space-y-3">
+          <h3 className="text-white font-bold flex items-center gap-2 mb-2">
+            <Eye size={16} className="text-emerald-400" /> Step 3 — Preview & Publish
+          </h3>
+
+          {signals.length === 0 ? (
+            <div className="text-center py-12">
+              <Zap size={36} className="text-white/20 mx-auto mb-3" />
+              <p className="text-white/40 text-sm">No signals yet</p>
+              <p className="text-white/30 text-xs mt-1">Pull rounds or paste history and click Generate</p>
+            </div>
+          ) : (
+            <>
+              <div className="space-y-2 max-h-[320px] overflow-y-auto pr-1">
+                {signals.map((s, i) => (
+                  <div
+                    key={i}
+                    className="bg-white/5 border border-white/10 rounded-xl p-3 flex items-start justify-between gap-3"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs text-white/40 mb-1">Signal {i + 1}</p>
+                      <p className="text-white font-black text-lg font-mono">
+                        Exit at <span className="text-emerald-400">{s.exit_point}x</span>
+                      </p>
+                      <p className="text-white/50 text-xs mt-1 line-clamp-2">{s.signal_notes}</p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <span className={`text-[10px] px-2 py-0.5 rounded border font-bold ${RISK_COLORS[s.risk_level]}`}>
+                        {s.risk_level}
+                      </span>
+                      <p className="text-white/80 text-sm font-bold mt-1">{s.confidence}%</p>
+                      <p className="text-emerald-400 text-xs font-bold mt-0.5">${s.suggested_price}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {metadata && (
+                <div className="text-[10px] text-white/30 font-mono space-y-0.5 pt-2 border-t border-white/10">
+                  <p>sample: {String(metadata.sample_size)} rounds</p>
+                  <p>median: {String(metadata.median_crash)}x · mu: {String(metadata.mu)} · sigma: {String(metadata.sigma)}</p>
+                  <p>volatility: {String(metadata.volatility)} · trend: {String(metadata.trend)}</p>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-2 pt-2">
+                <Field label="Pack Name (optional)">
+                  <input
+                    type="text"
+                    value={packName}
+                    onChange={e => setPackName(e.target.value)}
+                    placeholder="e.g. Morning Pack"
+                    className="form-input"
+                  />
+                </Field>
+                <Field label="Price (USD)">
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    value={packPrice}
+                    onChange={e => setPackPrice(e.target.value)}
+                    className="form-input"
+                  />
+                </Field>
+              </div>
+
+              <div className="flex gap-2 pt-1">
                 <button
-                  onClick={toggleAutoDispatch}
-                  className={`px-4 py-2 rounded-xl font-bold text-sm transition ${
-                    autoDispatch.enabled
-                      ? 'bg-green-500/20 text-green-400 border border-green-500/30'
-                      : 'bg-zinc-800 text-zinc-500'
-                  }`}
+                  type="button"
+                  onClick={() => handleCreateBatch(false)}
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-sm font-bold transition"
                 >
-                  {autoDispatch.enabled ? '🟢 Auto-Dispatch ON' : '⏸️ Auto-Dispatch OFF'}
+                  Save as Draft
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleCreateBatch(true)}
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-black rounded-xl text-sm font-black transition"
+                >
+                  <Send size={14} /> Publish Now
                 </button>
               </div>
-              {autoDispatch.enabled && (
-                <div className="flex items-center gap-2 text-sm text-zinc-400">
-                  <span>Interval: {autoDispatch.interval} min</span>
-                  <span className="text-zinc-600">|</span>
-                  <span>Max: {autoDispatch.maxSignals} signals</span>
-                </div>
-              )}
-            </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => exportSignals('csv')}
-                className="text-xs bg-zinc-800 hover:bg-zinc-700 px-3 py-1.5 rounded-lg flex items-center gap-1 transition"
-              >
-                <Download size={14} /> CSV
-              </button>
-              <button
-                onClick={() => exportSignals('json')}
-                className="text-xs bg-zinc-800 hover:bg-zinc-700 px-3 py-1.5 rounded-lg flex items-center gap-1 transition"
-              >
-                <Download size={14} /> JSON
-              </button>
-            </div>
-          </div>
+            </>
+          )}
         </div>
-
-        {/* Review Signals Section */}
-        {signals.length > 0 && (
-          <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-6">
-            <p className="text-xs font-bold uppercase tracking-widest text-zinc-500 mb-5">
-              Step 2 — Review {signals.length} Signals
-            </p>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-              {signals.map((s, i) => (
-                <div key={i} className="bg-zinc-950 border rounded-xl p-4"
-                  style={{ borderColor: `${riskColor(s.risk_level || 'LOW')}30` }}>
-
-                  <div className="flex items-center justify-between mb-4">
-                    <span className="text-xs font-black uppercase px-3 py-1 rounded-full"
-                      style={{ color: riskColor(s.risk_level || 'LOW'), background: `${riskColor(s.risk_level || 'LOW')}20` }}>
-                      {s.risk_level || 'LOW'} RISK
-                    </span>
-                    <button type="button"
-                      onClick={() => setSignals(p => p.filter((_, idx) => idx !== i))}
-                      className="text-zinc-600 hover:text-red-400">
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3 mb-3">
-                    <div>
-                      <label className="text-[10px] text-zinc-600 uppercase font-bold block mb-1">Entry</label>
-                      <input type="number" step="0.01" value={s.entry_point}
-                        onChange={e => setSignals(p => p.map((sig, idx) => 
-                          idx === i ? { ...sig, entry_point: parseFloat(e.target.value) || 1.20 } : sig
-                        ))}
-                        className="w-full bg-green-500/10 border border-green-500/30 text-green-400 font-mono font-black text-lg p-2 rounded-lg text-center outline-none" />
-                    </div>
-                    <div>
-                      <label className="text-[10px] text-zinc-600 uppercase font-bold block mb-1">Exit</label>
-                      <input type="number" step="0.01" value={s.exit_point}
-                        onChange={e => setSignals(p => p.map((sig, idx) => 
-                          idx === i ? { ...sig, exit_point: parseFloat(e.target.value) || 2.00 } : sig
-                        ))}
-                        className="w-full bg-red-500/10 border border-red-500/30 text-red-400 font-mono font-black text-lg p-2 rounded-lg text-center outline-none" />
-                    </div>
-                  </div>
-
-                  <div className="mb-3">
-                    <div className="flex justify-between mb-1">
-                      <label className="text-[10px] text-zinc-600 uppercase font-bold">Confidence</label>
-                      <span className="text-yellow-400 text-xs font-black">{s.confidence}%</span>
-                    </div>
-                    <input type="range" min="50" max="95" value={s.confidence}
-                      onChange={e => setSignals(p => p.map((sig, idx) => 
-                        idx === i ? { ...sig, confidence: parseInt(e.target.value) } : sig
-                      ))}
-                      className="w-full accent-yellow-400" />
-                  </div>
-
-                  <div className="flex gap-2 mb-3">
-                    {[3, 5, 10].map(price => (
-                      <button key={price} type="button"
-                        onClick={() => setSignals(prev => prev.map((sig, idx) => 
-                          idx === i ? { ...sig, suggested_price: price } : sig
-                        ))}
-                        className={`flex-1 py-2 rounded-lg font-black text-sm border transition-all ${
-                          s.suggested_price === price
-                            ? 'border-green-500 bg-green-500/20 text-green-400'
-                            : 'border-zinc-700 bg-zinc-900 text-zinc-500'
-                        }`}>
-                        ${price}
-                      </button>
-                    ))}
-                  </div>
-
-                  <p className="text-zinc-600 text-xs italic">{s.signal_notes}</p>
-                </div>
-              ))}
-            </div>
-
-            <button type="button" onClick={dispatchSignals} disabled={dispatching}
-              className={`w-full py-5 rounded-xl font-black text-base uppercase tracking-wider flex items-center justify-center gap-3 transition-all ${
-                dispatching
-                  ? 'bg-zinc-800 text-zinc-600 cursor-not-allowed'
-                  : 'bg-red-500 hover:bg-red-400 text-white'
-              }`}>
-              {dispatching ? (
-                <><RefreshCw size={20} className="animate-spin" /> Dispatching...</>
-              ) : (
-                <><Send size={20} /> Dispatch Batch to App</>
-              )}
-            </button>
-          </div>
-        )}
-
-        {/* Signal History Modal */}
-        {showHistory && (
-          <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 max-w-4xl w-full max-h-[80vh] overflow-y-auto">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-lg font-bold text-white">Signal History</h3>
-                <button onClick={() => setShowHistory(false)} className="text-zinc-500 hover:text-white">
-                  <X size={20} />
-                </button>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-zinc-800/30">
-                    <tr>
-                      <th className="px-4 py-2 text-left text-xs font-bold text-zinc-400">Entry</th>
-                      <th className="px-4 py-2 text-left text-xs font-bold text-zinc-400">Exit</th>
-                      <th className="px-4 py-2 text-left text-xs font-bold text-zinc-400">Confidence</th>
-                      <th className="px-4 py-2 text-left text-xs font-bold text-zinc-400">Risk</th>
-                      <th className="px-4 py-2 text-left text-xs font-bold text-zinc-400">Status</th>
-                      <th className="px-4 py-2 text-left text-xs font-bold text-zinc-400">Created</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-zinc-800">
-                    {signalHistory.slice(0, 20).map((s) => (
-                      <tr key={s.id} className="hover:bg-zinc-800/30 transition">
-                        <td className="px-4 py-2 text-sm font-mono text-green-400">{s.entry_point}x</td>
-                        <td className="px-4 py-2 text-sm font-mono text-red-400">{s.exit_point}x</td>
-                        <td className="px-4 py-2 text-sm text-yellow-400">{s.confidence}%</td>
-                        <td className="px-4 py-2">
-                          <span className={`text-xs px-2 py-0.5 rounded-full`}
-                            style={{ 
-                              background: `${riskColor(s.risk_level || 'MEDIUM')}20`, 
-                              color: riskColor(s.risk_level || 'MEDIUM') 
-                            }}>
-                            {s.risk_level || 'MEDIUM'}
-                          </span>
-                        </td>
-                        <td className="px-4 py-2">
-                          <span className={`text-xs font-bold ${
-                            s.status === 'live' ? 'text-green-400' :
-                            s.status === 'completed' ? 'text-blue-400' :
-                            'text-zinc-500'
-                          }`}>
-                            {s.status || 'N/A'}
-                          </span>
-                        </td>
-                        <td className="px-4 py-2 text-xs text-zinc-500">
-                          {new Date(s.created_at).toLocaleDateString()}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        )}
-
       </div>
+
+      {/* Batch list */}
+      <div className="glass-card p-5">
+        <h3 className="text-white font-bold flex items-center gap-2 mb-4">
+          <History size={16} className="text-emerald-400" /> Recent Batches
+        </h3>
+
+        {loadingBatches && batches.length === 0 ? (
+          <div className="text-center py-6 text-white/30 text-sm">Loading...</div>
+        ) : batches.length === 0 ? (
+          <div className="text-center py-6">
+            <p className="text-white/40 text-sm">No batches yet</p>
+            <p className="text-white/30 text-xs mt-1">Generate signals and click Publish</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {batches.map(b => {
+              const expanded = expandedBatch === b.id;
+              const sigs = batchSignals[b.id] ?? [];
+              return (
+                <div key={b.id} className="bg-white/5 border border-white/10 rounded-xl overflow-hidden">
+                  <div className="flex items-start justify-between gap-3 p-3">
+                    <button
+                      type="button"
+                      onClick={() => toggleBatchSignals(b.id)}
+                      className="flex-1 flex items-center gap-3 text-left min-w-0"
+                    >
+                      <ChevronDown
+                        size={14}
+                        className={`text-white/40 transition-transform shrink-0 ${expanded ? 'rotate-180' : ''}`}
+                      />
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-white font-bold text-sm truncate">{b.name || 'Unnamed Batch'}</span>
+                          <span className={`text-[10px] px-2 py-0.5 rounded border font-bold ${STATUS_COLORS[b.status]}`}>
+                            {b.status}
+                          </span>
+                          {b.volatility && (
+                            <span className="text-[10px] text-white/40 font-mono">σ {b.sigma} · {b.volatility}</span>
+                          )}
+                        </div>
+                        <p className="text-white/40 text-xs mt-1">
+                          {b.signal_count} signals · ${b.price_usd?.toFixed(2)} · {new Date(b.created_at).toLocaleString()}
+                        </p>
+                      </div>
+                    </button>
+                    <div className="flex gap-1 flex-wrap justify-end shrink-0">
+                      {b.status === 'draft' && (
+                        <button
+                          onClick={() => changeBatchStatus(b, 'published')}
+                          disabled={busyBatchId === b.id}
+                          className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/25 transition disabled:opacity-50"
+                          type="button"
+                        >
+                          <Eye size={10} /> Publish
+                        </button>
+                      )}
+                      {b.status === 'published' && (
+                        <button
+                          onClick={() => changeBatchStatus(b, 'expired')}
+                          disabled={busyBatchId === b.id}
+                          className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30 hover:bg-amber-500/25 transition disabled:opacity-50"
+                          type="button"
+                        >
+                          <EyeOff size={10} /> Expire
+                        </button>
+                      )}
+                      {b.status !== 'archived' && (
+                        <button
+                          onClick={() => changeBatchStatus(b, 'archived')}
+                          disabled={busyBatchId === b.id}
+                          className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold bg-zinc-500/15 text-zinc-300 border border-zinc-500/30 hover:bg-zinc-500/25 transition disabled:opacity-50"
+                          type="button"
+                        >
+                          Archive
+                        </button>
+                      )}
+                      <button
+                        onClick={() => deleteBatch(b)}
+                        disabled={busyBatchId === b.id}
+                        className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold bg-red-500/15 text-red-300 border border-red-500/30 hover:bg-red-500/25 transition disabled:opacity-50"
+                        type="button"
+                      >
+                        <Trash2 size={10} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {expanded && (
+                    <div className="border-t border-white/10 bg-black/20 p-3 space-y-2">
+                      {sigs.length === 0 ? (
+                        <p className="text-white/30 text-xs text-center py-2">Loading signals...</p>
+                      ) : (
+                        sigs.map(s => (
+                          <div
+                            key={s.id}
+                            className="flex items-center justify-between gap-2 text-xs bg-white/5 rounded-lg p-2"
+                          >
+                            <div className="flex-1 min-w-0">
+                              <span className="text-white/40">#{s.position + 1}</span>{' '}
+                              <span className="text-white font-mono">exit {s.exit_point}x</span>{' '}
+                              <span className="text-white/40">· {s.confidence}% ·</span>{' '}
+                              <span className={`px-1.5 py-0.5 rounded text-[10px] border ${RISK_COLORS[s.risk_level]}`}>{s.risk_level}</span>
+                            </div>
+                            <div className="flex gap-1">
+                              {(['won','lost','void','pending'] as const).map(r => (
+                                <button
+                                  key={r}
+                                  onClick={() => markSignalResult(s.id, b.id, r)}
+                                  disabled={s.result_status === r}
+                                  className={`px-1.5 py-0.5 rounded text-[9px] font-bold border transition disabled:opacity-60 ${
+                                    s.result_status === r
+                                      ? r === 'won' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                                        : r === 'lost' ? 'bg-red-500/20 text-red-300 border-red-500/40'
+                                        : r === 'void' ? 'bg-blue-500/20 text-blue-300 border-blue-500/40'
+                                        : 'bg-zinc-500/20 text-zinc-300 border-zinc-500/40'
+                                      : 'bg-white/5 text-white/40 border-white/10 hover:bg-white/10'
+                                  }`}
+                                  type="button"
+                                >
+                                  {r}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <label className="block text-xs text-white/60 font-bold uppercase tracking-wider mb-1.5">
+        {label}
+      </label>
+      {children}
+    </div>
+  );
+}
+
+function StatCard({ label, value, color = 'text-white' }: { label: string; value: number | string; color?: string }) {
+  return (
+    <div className="bg-white/5 border border-white/10 rounded-xl p-3">
+      <p className="text-xs text-white/40 uppercase tracking-wider font-bold mb-1">{label}</p>
+      <p className={`text-2xl font-black ${color}`}>{value}</p>
     </div>
   );
 }
