@@ -17,26 +17,61 @@ import {
   Settings,
   Menu,
   X,
-  Sparkles,
   Loader2,
   Target,
   ShieldAlert,
   LogOut,
+  Coins,
+  Send,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase/client';
 
-const adminNav = [
-  { label: 'Dashboard',         href: '/admin',                  icon: LayoutDashboard },
-  { label: 'Customers',         href: '/admin/customers',        icon: Users },
-  { label: 'Financial Center',  href: '/admin/financial',        icon: DollarSign },
-  { label: 'Football Signals',  href: '/admin/football-signals', icon: Target },
-  { label: 'Events',            href: '/events',                 icon: Calendar },
-  { label: 'Ticketing',         href: '/ticketing',              icon: Ticket },
-  { label: 'Aviator',           href: '/aviator',                icon: Zap },
-  { label: 'Crash Game',        href: '/crash-game',             icon: Gamepad2 },
-  { label: 'Analytics',         href: '/admin/analytics',        icon: BarChart3 },
-  { label: 'Audit Logs',        href: '/admin/audit-logs',       icon: History },
-  { label: 'Settings',          href: '/admin/settings',         icon: Settings },
+type NavItem = {
+  label: string;
+  href: string;
+  icon: React.ComponentType<{ size?: number | string; className?: string }>;
+  accent?: 'gold'; // special color for Treasury
+};
+
+type NavGroup = {
+  label: string;
+  items: NavItem[];
+};
+
+const adminNav: NavGroup[] = [
+  {
+    label: 'Main',
+    items: [
+      { label: 'Dashboard', href: '/admin', icon: LayoutDashboard },
+      { label: 'Customers', href: '/admin/customers', icon: Users },
+      { label: 'Analytics', href: '/admin/analytics', icon: BarChart3 },
+    ],
+  },
+  {
+    label: 'Finance',
+    items: [
+      { label: 'Financial Center', href: '/admin/financial', icon: DollarSign },
+      { label: 'Treasury', href: '/admin/treasury', icon: Coins, accent: 'gold' },
+      { label: 'Withdrawals', href: '/admin/withdrawals', icon: Send },
+    ],
+  },
+  {
+    label: 'Operations',
+    items: [
+      { label: 'Football Signals', href: '/admin/football-signals', icon: Target },
+      { label: 'Events', href: '/events', icon: Calendar },
+      { label: 'Ticketing', href: '/ticketing', icon: Ticket },
+      { label: 'Aviator', href: '/aviator', icon: Zap },
+      { label: 'Crash Game', href: '/crash-game', icon: Gamepad2 },
+    ],
+  },
+  {
+    label: 'System',
+    items: [
+      { label: 'Audit Logs', href: '/admin/audit-logs', icon: History },
+      { label: 'Settings', href: '/admin/settings', icon: Settings },
+    ],
+  },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -141,7 +176,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       </div>
 
       {/* Sidebar */}
-      <aside className={`${sidebarOpen ? 'w-64' : 'w-20'} bg-white/5 backdrop-blur-xl border-r border-white/10 fixed h-screen transition-all duration-300 z-50 overflow-y-auto flex flex-col`}>
+      <aside
+        className={`${sidebarOpen ? 'w-64' : 'w-20'} bg-white/5 backdrop-blur-xl border-r border-white/10 fixed h-screen transition-all duration-300 z-50 overflow-y-auto flex flex-col`}
+      >
         <div className="p-4 border-b border-white/10">
           <div className="flex items-center justify-between">
             <Link href="/admin" className="flex items-center gap-3">
@@ -150,7 +187,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               </div>
               {sidebarOpen && (
                 <div>
-                  <span className="font-black text-lg text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-blue-400">Global Hub</span>
+                  <span className="font-black text-lg text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-blue-400">
+                    Global Hub
+                  </span>
                   <p className="text-[10px] text-white/30">Admin Panel</p>
                 </div>
               )}
@@ -165,25 +204,44 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           </div>
         </div>
 
-        <nav className="p-3 space-y-1 flex-1">
-          {adminNav.map((item) => {
-            const Icon = item.icon;
-            const isActive = pathname === item.href || pathname?.startsWith(item.href + '/');
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all ${
-                  isActive
-                    ? 'bg-white/10 text-white border border-white/5'
-                    : 'text-white/40 hover:text-white hover:bg-white/5'
-                }`}
-              >
-                <Icon size={18} />
-                {sidebarOpen && <span>{item.label}</span>}
-              </Link>
-            );
-          })}
+        <nav className="p-3 space-y-3 flex-1">
+          {adminNav.map((group) => (
+            <div key={group.label}>
+              {sidebarOpen && (
+                <p className="px-3 pb-1 text-[10px] font-bold uppercase tracking-widest text-white/25">
+                  {group.label}
+                </p>
+              )}
+              <div className="space-y-0.5">
+                {group.items.map((item) => {
+                  const Icon = item.icon;
+                  const isActive =
+                    pathname === item.href ||
+                    (item.href !== '/admin' && pathname?.startsWith(item.href + '/'));
+                  const isGold = item.accent === 'gold';
+
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all ${
+                        isActive
+                          ? isGold
+                            ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
+                            : 'bg-white/10 text-white border border-white/5'
+                          : 'text-white/40 hover:text-white hover:bg-white/5'
+                      }`}
+                    >
+                      <Icon size={18} className={isGold && !isActive ? 'text-amber-400/60' : ''} />
+                      {sidebarOpen && (
+                        <span className={isGold ? 'font-bold' : ''}>{item.label}</span>
+                      )}
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
         </nav>
 
         {/* Signed in as / Sign out */}
