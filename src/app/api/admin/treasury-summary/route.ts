@@ -40,18 +40,18 @@ export async function GET() {
 
     // Aggregate
     const pendingCount = pending?.length ?? 0;
-    const pendingTotal = (pending ?? []).reduce((s, w) => s + Number(w.amount_usd || 0), 0);
+    const pendingTotal = (pending ?? []).reduce((s, w) => s + Number(w.amount || 0), 0);
 
     const byStatus = (status: string) =>
       (recent ?? []).filter(w => w.status === status).length;
 
     const completedTotal30d = (recent ?? [])
       .filter(w => w.status === 'paid')
-      .reduce((s, w) => s + Number(w.amount_usd || 0), 0);
+      .reduce((s, w) => s + Number(w.amount.amount || 0), 0);
 
     const failedTotal30d = (recent ?? [])
       .filter(w => ['failed', 'rejected'].includes(w.status))
-      .reduce((s, w) => s + Number(w.amount_usd || 0), 0);
+      .reduce((s, w) => s + Number(w.amount.amount || 0), 0);
 
     // Recent treasury movements (last 20) — for sparkline
     const { data: movements, error: mErr } = await supabase
