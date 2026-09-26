@@ -16,11 +16,26 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Config missing' }, { status: 500 });
     }
 
-    const cookieStore = await cookies();
+        const cookieStore = await cookies();
     const authClient = createServerClient(
       SUPABASE_URL,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      { cookies: { getAll: () => cookieStore.getAll(), setAll: () => {} } }
+      {
+        cookies: {
+          getAll() {
+            return cookieStore.getAll();
+          },
+          setAll(cookiesToSet) {
+            try {
+              cookiesToSet.forEach(({ name, value, options }) => {
+                cookieStore.set(name, value, options);
+              });
+            } catch {
+              // ignore — response already committed
+            }
+          },
+        },
+      }
     );
     const { data: { user } } = await authClient.auth.getUser();
     if (!user || !user.email) {
