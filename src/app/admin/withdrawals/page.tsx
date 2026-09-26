@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase/client';
 import { useAuth } from '@/context/AuthContext';
 import {
   Loader2, RefreshCw, Clock, CheckCircle, XCircle, AlertCircle,
-  Banknote, Mail, User as UserIcon, Zap, ShieldAlert, ChevronRight,
+  Banknote, Mail, User as UserIcon, Zap, ShieldAlert, ChevronRight, Send,
 } from 'lucide-react';
 
 type Pending = {
@@ -101,7 +101,7 @@ export default function WithdrawalsPage(): ReactElement {
 
   // ── Actions ──
   const approve = async (id: string) => {
-    if (!confirm('Approve this withdrawal? Send the money externally, then click "Mark Paid".')) return;
+    if (!confirm('Approve this withdrawal? You will then trigger the Paystack payout.')) return;
     setBusyId(id);
     setError('');
     setSuccess('');
@@ -115,7 +115,7 @@ export default function WithdrawalsPage(): ReactElement {
       if (rpcErr) throw rpcErr;
       const r = data as { ok?: boolean; error?: string } | null;
       if (!r?.ok) throw new Error(r?.error || 'Approval failed');
-      setSuccess('Withdrawal approved. Send the money, then click "Mark Paid".');
+      setSuccess('Withdrawal approved. Now click "Pay via Paystack" to send the money.');
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Approval failed');
@@ -124,8 +124,33 @@ export default function WithdrawalsPage(): ReactElement {
     }
   };
 
+  const payPaystack = async (id: string) => {
+    if (!confirm('Trigger Paystack transfer? Money will be sent to the customer\'s M-Pesa.')) return;
+    setBusyId(id);
+    setError('');
+    setSuccess('');
+    try {
+      const res = await fetch('/api/admin/trigger-payout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ withdrawal_id: id }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || 'Payout trigger failed');
+        return;
+      }
+      setSuccess(`Paystack transfer created. Code: ${data.transfer_code || 'pending'}. Awaiting approval + webhook.`);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Payout failed');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   const complete = async (id: string) => {
-    const note = prompt('Payout reference (e.g. M-Pesa TXN code):', 'Sent via Paystack');
+    const note = prompt('Payout reference (e.g. M-Pesa TXN code):', 'Sent manually');
     if (note === null) return;
     setBusyId(id);
     setError('');
@@ -206,7 +231,7 @@ export default function WithdrawalsPage(): ReactElement {
             <Banknote size={22} className="text-emerald-400" /> Withdrawals
           </h1>
           <p className="text-sm text-white/40">
-            Approve, mark paid, or reject pending payouts.
+            Approve, pay via Paystack, or reject pending payouts.
           </p>
         </div>
         <button
@@ -275,6 +300,7 @@ export default function WithdrawalsPage(): ReactElement {
           fmtCountdown={fmtCountdown}
           statusColor={statusColor}
           onApprove={approve}
+          onPayPaystack={payPaystack}
           onComplete={complete}
           onReject={reject}
         />
@@ -289,13 +315,14 @@ export default function WithdrawalsPage(): ReactElement {
 // Pending queue
 // ─────────────────────────────────────────────────────────
 function PendingList({
-  items, busyId, fmtCountdown, statusColor, onApprove, onComplete, onReject,
+  items, busyId, fmtCountdown, statusColor, onApprove, onPayPaystack, onComplete, onReject,
 }: {
   items: Pending[];
   busyId: string | null;
   fmtCountdown: (s: number) => string;
   statusColor: (s: string) => string;
   onApprove: (id: string) => void;
+  onPayPaystack: (id: string) => void;
   onComplete: (id: string) => void;
   onReject: (id: string) => void;
 }): ReactElement {
@@ -316,6 +343,7 @@ function PendingList({
         const busy = busyId === w.id;
         const canApprove = !expired && w.status === 'pending';
         const canComplete = !expired && (w.status === 'pending' || w.status === 'approved');
+        const canPayPaystack = !expired && w.status === 'approved';
 
         return (
           <div
@@ -381,6 +409,7 @@ function PendingList({
 
                 <div className="flex gap-2 flex-wrap justify-end">
                   <button
+                    type="button"
                     onClick={() => onApprove(w.id)}
                     disabled={busy || !canApprove}
                     className="px-3 py-1.5 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 rounded-lg text-xs font-bold border border-blue-500/30 transition disabled:opacity-40 flex items-center gap-1"
@@ -388,14 +417,30 @@ function PendingList({
                     {busy ? <Loader2 size={12} className="animate-spin" /> : <Zap size={12} />}
                     Approve
                   </button>
+
+                  {canPayPaystack && (
+                    <button
+                      type="button"
+                      onClick={() => onPayPaystack(w.id)}
+                      disabled={busy}
+                      className="px-3 py-1.5 bg-gradient-to-r from-amber-500 to-amber-400 text-black rounded-lg text-xs font-black transition disabled:opacity-40 flex items-center gap-1"
+                    >
+                      {busy ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
+                      Pay via Paystack
+                    </button>
+                  )}
+
                   <button
+                    type="button"
                     onClick={() => onComplete(w.id)}
                     disabled={busy || !canComplete}
                     className="px-3 py-1.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 rounded-lg text-xs font-bold border border-emerald-500/30 transition disabled:opacity-40 flex items-center gap-1"
                   >
-                    <CheckCircle size={12} /> Mark Paid
+                    <CheckCircle size={12} /> Mark Paid (manual)
                   </button>
+
                   <button
+                    type="button"
                     onClick={() => onReject(w.id)}
                     disabled={busy || expired}
                     className="px-3 py-1.5 bg-red-500/20 hover:bg-red-500/30 text-red-300 rounded-lg text-xs font-bold border border-red-500/30 transition disabled:opacity-40 flex items-center gap-1"
