@@ -53,7 +53,6 @@ export default function TreasuryDashboard() {
     return () => clearInterval(id);
   }, [loadSummary, loadLedger]);
 
-  // Donut: composition of treasury (available vs reserved), summed across currencies
   const donutSegments = useMemo(() => {
     if (!summary) return [];
     let available = 0;
@@ -68,7 +67,6 @@ export default function TreasuryDashboard() {
     ];
   }, [summary]);
 
-  // Bar chart: withdrawals over the last 14 days from ledger
   const barData = useMemo(() => {
     const days = Array.from({ length: 14 }, (_, i) => {
       const d = new Date();
@@ -82,12 +80,11 @@ export default function TreasuryDashboard() {
       if (day in totals) totals[day] += row.amount;
     }
     return days.map(d => ({
-      label: d.slice(8), // day of month
+      label: d.slice(8),
       value: totals[d],
     }));
   }, [ledger]);
 
-  // Sparkline: last N ledger amounts cumulative
   const sparkValues = useMemo(() => {
     const sorted = [...ledger].reverse();
     let sum = 0;
@@ -119,12 +116,16 @@ export default function TreasuryDashboard() {
           </Link>
           <button
             type="button"
-            onClick={() => { loadSummary(); loadLedger(); }}
+            onClick={async () => {
+              setLoading(true);
+              setLedgerLoading(true);
+              await Promise.all([loadSummary(), loadLedger()]);
+            }}
             disabled={loading}
             className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-xs font-bold text-white/70 transition disabled:opacity-50"
           >
-            <RefreshCw size={12} className={loading ? 'animate-spin text-amber-400' : ''} />
-            Refresh
+            <RefreshCw size={12} className={loading ? 'animate-spin text-amber-400' : 'text-white/60'} />
+            {loading ? 'Syncing...' : 'Refresh'}
           </button>
           <button
             type="button"
@@ -136,10 +137,8 @@ export default function TreasuryDashboard() {
         </div>
       </div>
 
-      {/* Hero cards */}
       <TreasuryHeroCards data={summary} loading={loading} />
 
-      {/* Middle row: Paystack + Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-1">
           <PaystackBalanceCard />
@@ -175,7 +174,6 @@ export default function TreasuryDashboard() {
         </div>
       </div>
 
-      {/* Movement chart */}
       <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-5">
         <p className="text-xs font-bold uppercase tracking-wider text-white/40 mb-4">
           Treasury Movement · Last 14 Days
@@ -183,7 +181,6 @@ export default function TreasuryDashboard() {
         <BarChart data={barData} height={140} />
       </div>
 
-      {/* Ledger preview */}
       <div>
         <div className="flex items-center justify-between mb-3">
           <p className="text-xs font-bold uppercase tracking-wider text-white/40">
