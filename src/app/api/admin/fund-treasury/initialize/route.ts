@@ -8,7 +8,7 @@ const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY;
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_SERVICE_KEY =
   process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SERVICE_KEY;
-const APP_URL = process.env.APP_URL || 'https://enterprise-hub-vtzy.vercel.app';
+const APP_URL = process.env.APP_URL || 'https://enterprise-hub-phi.vercel.app';
 
 export async function POST(req: NextRequest) {
   try {
