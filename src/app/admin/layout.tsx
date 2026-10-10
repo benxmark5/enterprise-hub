@@ -23,6 +23,7 @@ import {
   LogOut,
   Coins,
   Send,
+  Building2,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase/client';
 
@@ -31,6 +32,8 @@ type NavItem = {
   href: string;
   icon: React.ComponentType<{ size?: number | string; className?: string }>;
   accent?: 'gold'; // special color for Treasury
+  disabled?: boolean;
+  soon?: boolean;
 };
 
 type NavGroup = {
@@ -45,6 +48,14 @@ const adminNav: NavGroup[] = [
       { label: 'Dashboard', href: '/admin', icon: LayoutDashboard },
       { label: 'Customers', href: '/admin/customers', icon: Users },
       { label: 'Analytics', href: '/admin/analytics', icon: BarChart3 },
+    ],
+  },
+  {
+    label: 'Partners',
+    items: [
+      { label: 'Providers', href: '/admin/providers', icon: Users },
+      { label: 'Marketers', href: '/admin/marketers', icon: Target },
+      { label: 'Vendors', href: '/admin/vendors', icon: Building2, disabled: true, soon: true },
     ],
   },
   {
@@ -216,9 +227,32 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 {group.items.map((item) => {
                   const Icon = item.icon;
                   const isActive =
-                    pathname === item.href ||
-                    (item.href !== '/admin' && pathname?.startsWith(item.href + '/'));
+                    !item.disabled &&
+                    (pathname === item.href ||
+                      (item.href !== '/admin' && pathname?.startsWith(item.href + '/')));
                   const isGold = item.accent === 'gold';
+
+                  if (item.disabled) {
+                    return (
+                      <div
+                        key={item.href}
+                        className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm cursor-not-allowed opacity-40"
+                        title="Coming soon"
+                      >
+                        <Icon size={18} />
+                        {sidebarOpen && (
+                          <span className="flex items-center gap-2 flex-1">
+                            {item.label}
+                            {item.soon && (
+                              <span className="text-[9px] uppercase tracking-wider bg-white/10 text-white/40 px-1.5 py-0.5 rounded-md">
+                                soon
+                              </span>
+                            )}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  }
 
                   return (
                     <Link
@@ -233,9 +267,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                       }`}
                     >
                       <Icon size={18} className={isGold && !isActive ? 'text-amber-400/60' : ''} />
-                      {sidebarOpen && (
-                        <span className={isGold ? 'font-bold' : ''}>{item.label}</span>
-                      )}
+                      {sidebarOpen && <span className={isGold ? 'font-bold' : ''}>{item.label}</span>}
                     </Link>
                   );
                 })}
