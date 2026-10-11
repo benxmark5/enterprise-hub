@@ -55,7 +55,7 @@ const adminNav: NavGroup[] = [
     items: [
       { label: 'Providers', href: '/admin/providers', icon: Users },
       { label: 'Marketers', href: '/admin/marketers', icon: Target },
-      { label: 'Vendors', href: '/admin/vendors', icon: Building2, disabled: true, soon: true },
+      { label: 'Vendors', href: '/admin/vendors', icon: Building2 },
     ],
   },
   {

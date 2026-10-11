@@ -1,30 +1,25 @@
 // src/lib/admin/status-theme.ts
 
-export type AdminStatus = 'pending' | 'approved' | 'rejected' | 'suspended';
+export type AdminStatus =
+  | 'pending' | 'approved' | 'rejected' | 'suspended'
+  | 'application_started' | 'documents_submitted' | 'under_review'
+  | 'info_required';
 
 export type StatusTheme = {
   label: string;
-  /** Soft halo behind the header */
   pageGlow: string;
-  /** Slim gradient bar at the top */
   pageBar: string;
-  /** Pulsing dot color for the bar */
   dotColor: string;
-  /** Outer glow color for the bar */
   barGlow: string;
-  /** Pill badge */
   badge: string;
-  /** Ring around the contact bar */
   headerRing: string;
-  /** Left-edge tint on section cards */
   sectionBorder: string;
-  /** Icon chip in section headers */
   chip: string;
-  /** Icon tint */
   icon: string;
 };
 
-export const statusThemes: Record<AdminStatus, StatusTheme> = {
+const baseThemes: Record<string, StatusTheme> = {
+  // ---- marketer statuses (existing) ----
   pending: {
     label: 'Pending',
     pageGlow: 'from-amber-500/20 via-orange-500/5 to-transparent',
@@ -73,9 +68,61 @@ export const statusThemes: Record<AdminStatus, StatusTheme> = {
     chip: 'bg-slate-500/10 text-slate-400 ring-1 ring-slate-500/20',
     icon: 'text-slate-400',
   },
+
+  // ---- vendor statuses (new) ----
+  application_started: {
+    label: 'Application started',
+    pageGlow: 'from-slate-500/20 via-zinc-500/5 to-transparent',
+    pageBar: 'bg-gradient-to-r from-slate-500 via-zinc-400 to-slate-500',
+    dotColor: 'bg-slate-400',
+    barGlow: 'shadow-[0_0_20px_rgba(148,163,184,0.45)]',
+    badge: 'bg-slate-500/10 text-slate-400 border border-slate-500/20',
+    headerRing: 'ring-1 ring-slate-500/10',
+    sectionBorder: 'border-l-2 border-l-slate-500/40',
+    chip: 'bg-slate-500/10 text-slate-400 ring-1 ring-slate-500/20',
+    icon: 'text-slate-400',
+  },
+  documents_submitted: {
+    label: 'Docs submitted',
+    pageGlow: 'from-sky-500/20 via-blue-500/5 to-transparent',
+    pageBar: 'bg-gradient-to-r from-sky-500 via-blue-400 to-sky-500',
+    dotColor: 'bg-sky-400',
+    barGlow: 'shadow-[0_0_20px_rgba(14,165,233,0.55)]',
+    badge: 'bg-sky-500/10 text-sky-400 border border-sky-500/20 shadow-[0_0_16px_rgba(14,165,233,0.15)]',
+    headerRing: 'ring-1 ring-sky-500/10',
+    sectionBorder: 'border-l-2 border-l-sky-500/40',
+    chip: 'bg-sky-500/10 text-sky-400 ring-1 ring-sky-500/20',
+    icon: 'text-sky-400',
+  },
+  under_review: {
+    label: 'Under review',
+    pageGlow: 'from-violet-500/20 via-purple-500/5 to-transparent',
+    pageBar: 'bg-gradient-to-r from-violet-500 via-purple-400 to-violet-500',
+    dotColor: 'bg-violet-400',
+    barGlow: 'shadow-[0_0_20px_rgba(139,92,246,0.55)]',
+    badge: 'bg-violet-500/10 text-violet-400 border border-violet-500/20 shadow-[0_0_16px_rgba(139,92,246,0.15)]',
+    headerRing: 'ring-1 ring-violet-500/10',
+    sectionBorder: 'border-l-2 border-l-violet-500/40',
+    chip: 'bg-violet-500/10 text-violet-400 ring-1 ring-violet-500/20',
+    icon: 'text-violet-400',
+  },
+  info_required: {
+    label: 'Info required',
+    pageGlow: 'from-orange-500/20 via-amber-500/5 to-transparent',
+    pageBar: 'bg-gradient-to-r from-orange-500 via-amber-400 to-orange-500',
+    dotColor: 'bg-orange-400',
+    barGlow: 'shadow-[0_0_20px_rgba(249,115,22,0.55)]',
+    badge: 'bg-orange-500/10 text-orange-400 border border-orange-500/20 shadow-[0_0_16px_rgba(249,115,22,0.15)]',
+    headerRing: 'ring-1 ring-orange-500/10',
+    sectionBorder: 'border-l-2 border-l-orange-500/40',
+    chip: 'bg-orange-500/10 text-orange-400 ring-1 ring-orange-500/20',
+    icon: 'text-orange-400',
+  },
 };
 
+export const statusThemes = baseThemes;
+
 export function getStatusTheme(status: string | null | undefined): StatusTheme {
-  const key = (status ?? 'pending').toLowerCase() as AdminStatus;
-  return statusThemes[key] ?? statusThemes.pending;
+  const key = (status ?? 'pending').toLowerCase();
+  return baseThemes[key] ?? baseThemes.pending;
 }
