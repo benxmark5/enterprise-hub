@@ -14,7 +14,6 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Config missing' }, { status: 500 });
     }
 
-    // Auth
     const cookieStore = await cookies();
     const authClient = createServerClient(
       SUPABASE_URL,
@@ -49,18 +48,45 @@ export async function GET(req: NextRequest) {
     const { data, error } = await q;
     if (error) throw error;
 
-    // Count summary
-    const { data: allRows } = await admin.from('marketers').select('status');
-    const counts = { pending: 0, approved: 0, rejected: 0, suspended: 0, total: (allRows ?? []).length };
+    // Fetch full rowset for totals (small table, cheap)
+    const { data: allRows } = await admin
+      .from('marketers')
+      .select('status, total_conversions, pending_earnings, total_paid');
+
+    const counts = { pending: 0, approved: 0, rejected: 0, suspended: 0, total: 0 };
+    let totalConversions = 0;
+    let totalPendingEarnings = 0;
+    let totalPaid = 0;
+
     for (const r of allRows ?? []) {
-      const s = String((r as { status: string }).status);
+      const row = r as {
+        status: string;
+        total_conversions: number | null;
+        pending_earnings: number | null;
+        total_paid: number | null;
+      };
+      const s = String(row.status);
       if (s === 'pending') counts.pending++;
       else if (s === 'approved') counts.approved++;
       else if (s === 'rejected') counts.rejected++;
       else if (s === 'suspended') counts.suspended++;
+      counts.total++;
+
+      totalConversions += Number(row.total_conversions ?? 0);
+      totalPendingEarnings += Number(row.pending_earnings ?? 0);
+      totalPaid += Number(row.total_paid ?? 0);
     }
 
-    return NextResponse.json({ ok: true, marketers: data ?? [], counts });
+    return NextResponse.json({
+      ok: true,
+      marketers: data ?? [],
+      counts,
+      totals: {
+        conversions: totalConversions,
+        pendingEarnings: totalPendingEarnings,
+        paid: totalPaid,
+      },
+    });
   } catch (err) {
     console.error('[admin/marketers] error:', err);
     return NextResponse.json(
