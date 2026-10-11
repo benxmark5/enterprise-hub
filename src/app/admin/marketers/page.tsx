@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { relativeTime } from '@/lib/providers/format';
 import { getStatusTheme } from '@/lib/admin/status-theme';
+import MarketerAnalytics from '@/components/admin/MarketerAnalytics';
 
 type Marketer = {
   id: string;
@@ -55,14 +56,12 @@ export default function MarketersPage() {
   const [sortKey, setSortKey] = useState<SortKey>('joined_desc');
   const [page, setPage] = useState(1);
 
-  // All marketers across all tabs (used only for the leaderboard)
   const [allMarketers, setAllMarketers] = useState<Marketer[]>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      // Fetch current tab
       const res = await fetch(`/api/admin/marketers?status=${tab}`, { cache: 'no-store' });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to load marketers');
@@ -70,7 +69,6 @@ export default function MarketersPage() {
       setCounts(data.counts || { pending: 0, approved: 0, rejected: 0, suspended: 0, total: 0 });
       setTotals(data.totals || { conversions: 0, pendingEarnings: 0, paid: 0 });
 
-      // Fetch all (for leaderboard) in parallel — independent of current tab
       const allRes = await fetch('/api/admin/marketers?status=all', { cache: 'no-store' });
       const allData = await allRes.json();
       if (allRes.ok) setAllMarketers(allData.marketers || []);
@@ -123,7 +121,6 @@ export default function MarketersPage() {
     [processed, safePage]
   );
 
-  // Top 3 approved marketers by conversions
   const topMarketers = useMemo(() => {
     return [...allMarketers]
       .filter(m => m.status === 'approved')
@@ -171,7 +168,6 @@ export default function MarketersPage() {
 
       {/* KPI strip (clickable) + Leaderboard */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* KPI grid — 6 clickable cards */}
         <div className="lg:col-span-2 grid grid-cols-2 md:grid-cols-3 gap-3">
           <KpiCard
             icon={<Users size={14} />}
@@ -269,6 +265,9 @@ export default function MarketersPage() {
           )}
         </div>
       </div>
+
+      {/* Analytics dashboard */}
+      <MarketerAnalytics />
 
       {/* Error */}
       {error && (
