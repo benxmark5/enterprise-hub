@@ -7,6 +7,7 @@ import {
   Loader2, RefreshCw, Target, Eye, AlertCircle, Copy,
   Search, X, ChevronLeft, ChevronRight, ArrowUpDown,
   Users, UserCheck, Clock, Ban, TrendingUp, DollarSign,
+  Trophy, Crown, Medal,
 } from 'lucide-react';
 import { relativeTime } from '@/lib/providers/format';
 import { getStatusTheme } from '@/lib/admin/status-theme';
@@ -54,16 +55,25 @@ export default function MarketersPage() {
   const [sortKey, setSortKey] = useState<SortKey>('joined_desc');
   const [page, setPage] = useState(1);
 
+  // All marketers across all tabs (used only for the leaderboard)
+  const [allMarketers, setAllMarketers] = useState<Marketer[]>([]);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
+      // Fetch current tab
       const res = await fetch(`/api/admin/marketers?status=${tab}`, { cache: 'no-store' });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to load marketers');
       setMarketers(data.marketers || []);
       setCounts(data.counts || { pending: 0, approved: 0, rejected: 0, suspended: 0, total: 0 });
       setTotals(data.totals || { conversions: 0, pendingEarnings: 0, paid: 0 });
+
+      // Fetch all (for leaderboard) in parallel — independent of current tab
+      const allRes = await fetch('/api/admin/marketers?status=all', { cache: 'no-store' });
+      const allData = await allRes.json();
+      if (allRes.ok) setAllMarketers(allData.marketers || []);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load');
     } finally {
@@ -113,6 +123,14 @@ export default function MarketersPage() {
     [processed, safePage]
   );
 
+  // Top 3 approved marketers by conversions
+  const topMarketers = useMemo(() => {
+    return [...allMarketers]
+      .filter(m => m.status === 'approved')
+      .sort((a, b) => (b.total_conversions ?? 0) - (a.total_conversions ?? 0))
+      .slice(0, 3);
+  }, [allMarketers]);
+
   const copyCode = async (id: string, code: string) => {
     try {
       await navigator.clipboard.writeText(code);
@@ -151,44 +169,105 @@ export default function MarketersPage() {
         </button>
       </div>
 
-      {/* KPI cards */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-        <KpiCard
-          icon={<Users size={14} />}
-          label="Total"
-          value={counts.total.toLocaleString()}
-          tint="text-purple-400"
-        />
-        <KpiCard
-          icon={<Clock size={14} />}
-          label="Pending"
-          value={counts.pending.toLocaleString()}
-          tint="text-amber-400"
-        />
-        <KpiCard
-          icon={<UserCheck size={14} />}
-          label="Approved"
-          value={counts.approved.toLocaleString()}
-          tint="text-emerald-400"
-        />
-        <KpiCard
-          icon={<Ban size={14} />}
-          label="Suspended"
-          value={counts.suspended.toLocaleString()}
-          tint="text-slate-400"
-        />
-        <KpiCard
-          icon={<TrendingUp size={14} />}
-          label="Conversions"
-          value={totals.conversions.toLocaleString()}
-          tint="text-blue-400"
-        />
-        <KpiCard
-          icon={<DollarSign size={14} />}
-          label="Pending $"
-          value={`$${totals.pendingEarnings.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-          tint="text-emerald-400"
-        />
+      {/* KPI strip (clickable) + Leaderboard */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {/* KPI grid — 6 clickable cards */}
+        <div className="lg:col-span-2 grid grid-cols-2 md:grid-cols-3 gap-3">
+          <KpiCard
+            icon={<Users size={14} />}
+            label="Total"
+            value={counts.total.toLocaleString()}
+            tint="text-purple-400"
+            onClick={() => setTab('approved')}
+            active={false}
+          />
+          <KpiCard
+            icon={<Clock size={14} />}
+            label="Pending"
+            value={counts.pending.toLocaleString()}
+            tint="text-amber-400"
+            onClick={() => setTab('pending')}
+            active={tab === 'pending'}
+          />
+          <KpiCard
+            icon={<UserCheck size={14} />}
+            label="Approved"
+            value={counts.approved.toLocaleString()}
+            tint="text-emerald-400"
+            onClick={() => setTab('approved')}
+            active={tab === 'approved'}
+          />
+          <KpiCard
+            icon={<Ban size={14} />}
+            label="Suspended"
+            value={counts.suspended.toLocaleString()}
+            tint="text-slate-400"
+            onClick={() => setTab('suspended')}
+            active={tab === 'suspended'}
+          />
+          <KpiCard
+            icon={<TrendingUp size={14} />}
+            label="Conversions"
+            value={totals.conversions.toLocaleString()}
+            tint="text-blue-400"
+          />
+          <KpiCard
+            icon={<DollarSign size={14} />}
+            label="Pending $"
+            value={`$${totals.pendingEarnings.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+            tint="text-emerald-400"
+          />
+        </div>
+
+        {/* Leaderboard */}
+        <div className="relative rounded-2xl p-4 overflow-hidden bg-white/[0.03] border border-white/10 hover:border-purple-500/40 transition-all duration-300">
+          <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" aria-hidden />
+          <div className="flex items-center gap-2 mb-3">
+            <Trophy size={14} className="text-amber-400" />
+            <span className="text-[10px] font-bold uppercase tracking-widest text-white/40">
+              Top marketers
+            </span>
+          </div>
+
+          {topMarketers.length === 0 ? (
+            <p className="text-xs text-white/30 italic py-4">
+              No approved marketers yet.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {topMarketers.map((m, i) => {
+                const rankIcon =
+                  i === 0 ? <Crown size={14} className="text-amber-400" /> :
+                  i === 1 ? <Medal size={14} className="text-slate-300" /> :
+                  <Medal size={14} className="text-amber-700" />;
+                return (
+                  <Link
+                    key={m.id}
+                    href={`/admin/marketers/${m.id}`}
+                    className="flex items-center gap-3 px-2 py-2 rounded-xl hover:bg-white/5 transition group"
+                  >
+                    <span className="flex-shrink-0">{rankIcon}</span>
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center text-white text-xs font-black flex-shrink-0">
+                      {(m.display_name || '?')[0].toUpperCase()}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-bold text-white truncate group-hover:text-purple-300 transition">
+                        {m.display_name}
+                      </p>
+                      <p className="text-[10px] text-white/40 truncate">{m.referral_code}</p>
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <p className="text-sm font-black text-white">
+                        {(m.total_conversions ?? 0).toLocaleString()}
+                      </p>
+                      <p className="text-[9px] uppercase text-white/30 tracking-wider">conv</p>
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Error */}
@@ -400,15 +479,43 @@ export default function MarketersPage() {
   );
 }
 
-function KpiCard({ icon, label, value, tint }: { icon: React.ReactNode; label: string; value: string; tint: string }) {
-  return (
-    <div className="relative rounded-2xl p-4 overflow-hidden bg-white/[0.03] border border-white/10 hover:border-purple-500/40 transition-all duration-300">
+function KpiCard({
+  icon, label, value, tint, onClick, active,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  tint: string;
+  onClick?: () => void;
+  active?: boolean;
+}) {
+  const clickable = !!onClick;
+  const base =
+    'relative rounded-2xl p-4 overflow-hidden bg-white/[0.03] border transition-all duration-300 text-left w-full';
+  const state = active
+    ? 'border-purple-500/60 shadow-[0_0_20px_rgba(168,85,247,0.15)]'
+    : clickable
+      ? 'border-white/10 hover:border-purple-500/40 hover:bg-white/[0.05] cursor-pointer'
+      : 'border-white/10';
+
+  const inner = (
+    <>
       <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" aria-hidden />
       <div className="flex items-center gap-2 mb-1.5">
         <span className={tint}>{icon}</span>
         <span className="text-[10px] font-bold uppercase tracking-widest text-white/40">{label}</span>
       </div>
       <p className="text-2xl font-black text-white truncate">{value}</p>
-    </div>
+    </>
   );
+
+  if (clickable) {
+    return (
+      <button type="button" onClick={onClick} className={`${base} ${state}`}>
+        {inner}
+      </button>
+    );
+  }
+
+  return <div className={`${base} ${state}`}>{inner}</div>;
 }
