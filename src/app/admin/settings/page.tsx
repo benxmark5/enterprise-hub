@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { supabase } from '@/lib/supabase/client';
 import {
   Settings,
@@ -21,7 +22,8 @@ import {
   Database,
   Server,
   Smartphone,
-  Zap
+  Zap,
+  Landmark
 } from 'lucide-react';
 
 type AdminSettings = {
@@ -181,8 +183,30 @@ export default function AdminSettingsPage() {
           Refresh
         </button>
       </div>
+            {/* Company remittance card */}
+      <Link
+        href="/admin/settings/company-remittance"
+        className="group flex items-center gap-4 rounded-2xl border border-white/10 bg-white/5 hover:border-blue-500/50 hover:bg-white/[0.07] transition-all duration-300 p-5"
+      >
+        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center flex-shrink-0">
+          <Landmark size={20} className="text-white" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-base font-bold text-white group-hover:text-blue-300 transition">
+            Company remittance account
+          </p>
+          <p className="text-xs text-white/40 mt-0.5">
+            GlobalHub's receiving bank details for vendor collections.
+          </p>
+        </div>
+        <div className="text-white/30 group-hover:text-white/60 group-hover:translate-x-0.5 transition">
+          →
+        </div>
+      </Link>
 
       {message && (
+
+      
         <div className={`p-4 rounded-xl flex items-center gap-3 ${
           messageType === 'success' 
             ? 'bg-green-500/10 border border-green-500/20 text-green-400' 
