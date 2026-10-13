@@ -14,6 +14,7 @@ import { relativeTime } from '@/lib/providers/format';
 import { getStatusTheme } from '@/lib/admin/status-theme';
 import VendorKycPanel, { type KycDoc } from '@/components/admin/VendorKycPanel';
 import VendorBankPanel, { type BankAccount } from '@/components/admin/VendorBankPanel';
+import VendorContractPanel, { type VendorContract } from '@/components/admin/VendorContractPanel';
 
 type Vendor = {
   id: string;
@@ -88,6 +89,7 @@ export default function VendorDetailPage() {
   const [kyc, setKyc] = useState<KycDoc[]>([]);
   const [bank, setBank] = useState<BankAccount[]>([]);
   const [history, setHistory] = useState<HistoryRow[]>([]);
+  const [contracts, setContracts] = useState<VendorContract[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -110,6 +112,7 @@ export default function VendorDetailPage() {
       setKyc(data.kycDocuments ?? []);
       setBank(data.bankAccounts ?? []);
       setHistory(data.history ?? []);
+      setContracts(data.contracts ?? []);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load');
     } finally {
@@ -548,6 +551,14 @@ export default function VendorDetailPage() {
                 </div>
               )}
             </GlassSection>
+
+            <VendorContractPanel
+              vendorId={id}
+              contracts={contracts}
+              theme={theme}
+              onChanged={load}
+              isEditable={vendor.status !== 'rejected'}
+            />
 
             <GlassSection icon={<Wallet size={14} />} title="Lifecycle" theme={theme}>
               <Field label="Applied" value={relativeTime(vendor.applied_at)} />

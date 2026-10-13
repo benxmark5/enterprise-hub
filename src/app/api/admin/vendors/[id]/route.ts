@@ -48,11 +48,12 @@ export async function GET(
     if (vErr) throw vErr;
     if (!vendor) return NextResponse.json({ error: 'Vendor not found' }, { status: 404 });
 
-    const [kycRes, bankRes, historyRes, auditRes] = await Promise.all([
+    const [kycRes, bankRes, historyRes, auditRes, contractsRes] = await Promise.all([
       admin.from('vendor_kyc_documents').select('*').eq('vendor_id', id).order('created_at', { ascending: false }),
-      admin.from('vendor_bank_accounts').select('*').eq('vendor_id', id).order('created_at', { ascending: false }),
+      admin.from('vendor_bank_accounts').select('*').eq('vendor_id', id).is('deleted_at', null).order('created_at', { ascending: false }),
       admin.from('vendor_status_history').select('*').eq('vendor_id', id).order('created_at', { ascending: false }),
       admin.from('vendor_audit_log').select('*').eq('vendor_id', id).order('created_at', { ascending: false }).limit(100),
+      admin.from('vendor_contracts').select('*').eq('vendor_id', id).order('contract_version', { ascending: false }),
     ]);
 
     return NextResponse.json({
@@ -62,6 +63,7 @@ export async function GET(
       bankAccounts: bankRes.data ?? [],
       history: historyRes.data ?? [],
       audit: auditRes.data ?? [],
+      contracts: contractsRes.data ?? [],
     });
   } catch (err) {
     console.error('[admin/vendors/:id] error:', err);
