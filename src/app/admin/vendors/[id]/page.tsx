@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { relativeTime } from '@/lib/providers/format';
 import { getStatusTheme } from '@/lib/admin/status-theme';
+import VendorKycPanel, { type KycDoc } from '@/components/admin/VendorKycPanel';
 
 type Vendor = {
   id: string;
@@ -57,17 +58,7 @@ type Vendor = {
   updated_at: string;
 };
 
-type KycDoc = {
-  id: string;
-  doc_type: 'national_id' | 'passport' | 'business_registration' | 'tax_id' | 'proof_of_address';
-  status: 'pending' | 'verified' | 'rejected' | 'expired';
-  storage_path: string;
-  file_name: string | null;
-  mime_type: string | null;
-  reviewed_at: string | null;
-  rejection_note: string | null;
-  created_at: string;
-};
+
 
 type BankAccount = {
   id: string;
@@ -94,20 +85,10 @@ type HistoryRow = {
   created_at: string;
 };
 
-const DOC_LABELS: Record<KycDoc['doc_type'], string> = {
-  national_id: 'National ID',
-  passport: 'Passport',
-  business_registration: 'Business registration',
-  tax_id: 'Tax ID',
-  proof_of_address: 'Proof of address',
-};
+ 
 
-const DOC_STATUS_STYLES: Record<KycDoc['status'], string> = {
-  pending:  'bg-amber-500/10 text-amber-300 border-amber-500/30',
-  verified: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30',
-  rejected: 'bg-rose-500/10 text-rose-300 border-rose-500/30',
-  expired:  'bg-slate-500/10 text-slate-300 border-slate-500/30',
-};
+
+
 
 const BANK_STATUS_STYLES: Record<BankAccount['verification_status'], string> = {
   unverified: 'bg-slate-500/10 text-slate-300 border-slate-500/30',
@@ -362,27 +343,13 @@ export default function VendorDetailPage() {
               )}
             </GlassSection>
 
-            <GlassSection icon={<FileText size={14} />} title="KYC documents" theme={theme}>
-              {kyc.length === 0 ? (
-                <p className="text-sm text-slate-500 italic">
-                  No documents uploaded yet. (Upload UI arrives in Phase 1C-2.)
-                </p>
-              ) : (
-                <div className="space-y-2">
-                  {kyc.map(d => (
-                    <div key={d.id} className="flex items-center justify-between gap-3 py-2 border-b border-slate-800/60 last:border-0 last:pb-0">
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm text-slate-200">{DOC_LABELS[d.doc_type]}</p>
-                        {d.file_name && <p className="text-[10px] text-slate-500 font-mono truncate">{d.file_name}</p>}
-                      </div>
-                      <span className={`inline-flex px-2 py-0.5 rounded-md text-[10px] font-bold uppercase border ${DOC_STATUS_STYLES[d.status]}`}>
-                        {d.status}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </GlassSection>
+            <VendorKycPanel
+  vendorId={id}
+  documents={kyc}
+  theme={theme}
+  onChanged={load}
+  isEditable={vendor.status !== 'rejected'}
+/>
 
             <GlassSection icon={<Landmark size={14} />} title="Bank accounts" theme={theme}>
               {bank.length === 0 ? (
