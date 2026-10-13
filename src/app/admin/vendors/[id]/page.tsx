@@ -13,6 +13,7 @@ import {
 import { relativeTime } from '@/lib/providers/format';
 import { getStatusTheme } from '@/lib/admin/status-theme';
 import VendorKycPanel, { type KycDoc } from '@/components/admin/VendorKycPanel';
+import VendorBankPanel, { type BankAccount } from '@/components/admin/VendorBankPanel';
 
 type Vendor = {
   id: string;
@@ -60,21 +61,7 @@ type Vendor = {
 
 
 
-type BankAccount = {
-  id: string;
-  bank_name: string;
-  account_holder: string;
-  account_number: string;
-  branch_code: string | null;
-  swift_bic: string | null;
-  iban: string | null;
-  country: string;
-  currency: string;
-  is_primary: boolean;
-  verification_status: 'unverified' | 'pending' | 'verified' | 'failed';
-  verified_at: string | null;
-  created_at: string;
-};
+
 
 type HistoryRow = {
   id: string;
@@ -90,12 +77,7 @@ type HistoryRow = {
 
 
 
-const BANK_STATUS_STYLES: Record<BankAccount['verification_status'], string> = {
-  unverified: 'bg-slate-500/10 text-slate-300 border-slate-500/30',
-  pending:    'bg-amber-500/10 text-amber-300 border-amber-500/30',
-  verified:   'bg-emerald-500/10 text-emerald-300 border-emerald-500/30',
-  failed:     'bg-rose-500/10 text-rose-300 border-rose-500/30',
-};
+
 
 export default function VendorDetailPage() {
   const params = useParams();
@@ -351,30 +333,13 @@ export default function VendorDetailPage() {
   isEditable={vendor.status !== 'rejected'}
 />
 
-            <GlassSection icon={<Landmark size={14} />} title="Bank accounts" theme={theme}>
-              {bank.length === 0 ? (
-                <p className="text-sm text-slate-500 italic">
-                  No bank accounts recorded yet. (Add flow arrives in Phase 1C-3.)
-                </p>
-              ) : (
-                <div className="space-y-3">
-                  {bank.map(b => (
-                    <div key={b.id} className="rounded-xl bg-slate-800/40 border border-slate-700/40 p-3">
-                      <div className="flex items-center justify-between mb-2">
-                        <p className="text-sm font-bold text-slate-100">{b.bank_name}</p>
-                        <span className={`inline-flex px-2 py-0.5 rounded-md text-[10px] font-bold uppercase border ${BANK_STATUS_STYLES[b.verification_status]}`}>
-                          {b.verification_status}
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-400 font-mono">{b.account_number}</p>
-                      <p className="text-[10px] text-slate-500 mt-1">
-                        {b.account_holder} · {b.currency} · {b.country}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </GlassSection>
+          <VendorBankPanel
+  vendorId={id}
+  accounts={bank as BankAccount[]}
+  theme={theme}
+  onChanged={load}
+  isEditable={vendor.status !== 'rejected'}
+/>
 
             <GlassSection icon={<HistoryIcon size={14} />} title="Status history" theme={theme}>
               {history.length === 0 ? (
