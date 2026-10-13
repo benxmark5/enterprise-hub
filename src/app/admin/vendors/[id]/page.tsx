@@ -5,10 +5,10 @@ import { useEffect, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
-  ArrowLeft, Loader2, Mail, Phone, MapPin, Building2,
+  ArrowLeft, Loader2, Mail, Phone, MapPin,
   CheckCircle, XCircle, AlertCircle, Wallet, ShieldCheck,
-  User as UserIcon, History as HistoryIcon, FileText, Ban, RotateCcw,
-  Percent, DollarSign, Landmark,
+  User as UserIcon, History as HistoryIcon, Ban, RotateCcw,
+  Percent, DollarSign, Landmark, Pencil,
 } from 'lucide-react';
 import { relativeTime } from '@/lib/providers/format';
 import { getStatusTheme } from '@/lib/admin/status-theme';
@@ -93,6 +93,12 @@ export default function VendorDetailPage() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
+  // Commission editor
+  const [commissionEditing, setCommissionEditing] = useState(false);
+  const [commissionForm, setCommissionForm] = useState({ percent: '0', fixed_usd: '0', reason: '' });
+  const [commissionBusy, setCommissionBusy] = useState(false);
+  const [commissionError, setCommissionError] = useState('');
+
   const load = useCallback(async () => {
     if (!id) return;
     setLoading(true); setError('');
@@ -149,6 +155,63 @@ export default function VendorDetailPage() {
       setError(e instanceof Error ? e.message : `${kind} failed`);
     } finally {
       setBusy(false);
+    }
+  };
+
+  const startCommissionEdit = () => {
+    if (!vendor) return;
+    const cfg = vendor.commission_config || {};
+    setCommissionForm({
+      percent: String(cfg.percent ?? 0),
+      fixed_usd: String(cfg.fixed_usd ?? 0),
+      reason: '',
+    });
+    setCommissionError('');
+    setCommissionEditing(true);
+  };
+
+  const cancelCommissionEdit = () => {
+    setCommissionEditing(false);
+    setCommissionError('');
+  };
+
+  const saveCommission = async () => {
+    if (!vendor) return;
+    setCommissionError('');
+
+    const percent = Number(commissionForm.percent);
+    const fixed = Number(commissionForm.fixed_usd);
+    const reason = commissionForm.reason.trim();
+
+    if (!Number.isFinite(percent) || percent < 0 || percent > 100) {
+      setCommissionError('Percent must be between 0 and 100');
+      return;
+    }
+    if (!Number.isFinite(fixed) || fixed < 0) {
+      setCommissionError('Fixed fee must be 0 or greater');
+      return;
+    }
+    if (!reason) {
+      setCommissionError('A reason is required for the audit trail');
+      return;
+    }
+
+    setCommissionBusy(true);
+    try {
+      const res = await fetch(`/api/admin/vendors/${id}/commission`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ percent, fixed_usd: fixed, reason }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Update failed');
+      setSuccess('Commission rule updated.');
+      setCommissionEditing(false);
+      await load();
+    } catch (e) {
+      setCommissionError(e instanceof Error ? e.message : 'Update failed');
+    } finally {
+      setCommissionBusy(false);
     }
   };
 
@@ -385,16 +448,104 @@ export default function VendorDetailPage() {
             </GlassSection>
 
             <GlassSection icon={<Percent size={14} />} title="Commission" theme={theme}>
-              <div>
-                <p className="text-[10px] uppercase text-slate-500 font-bold tracking-widest mb-1">
-                  Current arrangement
-                </p>
-                <p className="text-3xl font-black tracking-tight bg-gradient-to-r from-purple-300 via-violet-300 to-purple-400 bg-clip-text text-transparent">
-                  {commissionLabel}
-                </p>
-              </div>
-              {commission.version != null && (
-                <Field label="Rule version" value={`v${commission.version}`} />
+              {!commissionEditing ? (
+                <>
+                  <div>
+                    <p className="text-[10px] uppercase text-slate-500 font-bold tracking-widest mb-1">
+                      Current arrangement
+                    </p>
+                    <p className="text-3xl font-black tracking-tight bg-gradient-to-r from-purple-300 via-violet-300 to-purple-400 bg-clip-text text-transparent">
+                      {commissionLabel}
+                    </p>
+                  </div>
+                  {commission.version != null && (
+                    <Field label="Rule version" value={`v${commission.version}`} />
+                  )}
+                  {vendor.status !== 'rejected' && (
+                    <button
+                      type="button"
+                      onClick={startCommissionEdit}
+                      className="mt-1 w-full flex items-center justify-center gap-2 py-2 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 hover:border-purple-500/50 text-purple-300 font-bold text-xs transition-all duration-300"
+                    >
+                      <Pencil size={12} /> Edit commission
+                    </button>
+                  )}
+                </>
+              ) : (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[10px] uppercase text-slate-500 font-bold tracking-widest mb-1">
+                        Percent <span className="text-rose-400">*</span>
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max="100"
+                        value={commissionForm.percent}
+                        onChange={(e) => setCommissionForm({ ...commissionForm, percent: e.target.value })}
+                        className="w-full px-3 py-2 bg-slate-800/60 border border-slate-700/60 focus:border-purple-500/60 focus:outline-none rounded-lg text-sm font-mono text-slate-100 transition-colors"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] uppercase text-slate-500 font-bold tracking-widest mb-1">
+                        Fixed fee (USD)
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={commissionForm.fixed_usd}
+                        onChange={(e) => setCommissionForm({ ...commissionForm, fixed_usd: e.target.value })}
+                        className="w-full px-3 py-2 bg-slate-800/60 border border-slate-700/60 focus:border-purple-500/60 focus:outline-none rounded-lg text-sm font-mono text-slate-100 transition-colors"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] uppercase text-slate-500 font-bold tracking-widest mb-1">
+                      Reason for change <span className="text-rose-400">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={commissionForm.reason}
+                      onChange={(e) => setCommissionForm({ ...commissionForm, reason: e.target.value })}
+                      placeholder="e.g. Annual review — volume increased"
+                      className="w-full px-3 py-2 bg-slate-800/60 border border-slate-700/60 focus:border-purple-500/60 focus:outline-none rounded-lg text-xs text-slate-100 transition-colors"
+                    />
+                    <p className="text-[10px] text-slate-500 mt-1 italic">
+                      Stored in the audit trail alongside the previous value.
+                    </p>
+                  </div>
+
+                  {commissionError && (
+                    <div className="flex items-start gap-2 p-2 bg-rose-500/10 border border-rose-500/20 rounded-lg">
+                      <AlertCircle size={14} className="text-rose-400 flex-shrink-0 mt-0.5" />
+                      <p className="text-[11px] text-rose-300 flex-1">{commissionError}</p>
+                    </div>
+                  )}
+
+                  <div className="flex items-center gap-2 pt-2 border-t border-slate-800/60">
+                    <button
+                      type="button"
+                      onClick={cancelCommissionEdit}
+                      disabled={commissionBusy}
+                      className="px-3 py-2 rounded-lg bg-slate-800/60 hover:bg-slate-800 border border-slate-700/60 text-xs font-bold text-slate-300 transition disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={saveCommission}
+                      disabled={commissionBusy}
+                      className="ml-auto inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-purple-500 to-violet-400 text-black font-black text-xs disabled:opacity-40 shadow-[0_8px_30px_rgba(168,85,247,0.35)] hover:shadow-[0_8px_40px_rgba(168,85,247,0.55)] transition-all duration-300"
+                    >
+                      {commissionBusy ? <Loader2 size={12} className="animate-spin" /> : null}
+                      Save
+                    </button>
+                  </div>
+                </div>
               )}
             </GlassSection>
 
