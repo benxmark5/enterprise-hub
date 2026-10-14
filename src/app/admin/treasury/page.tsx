@@ -9,7 +9,7 @@ import PaystackBalanceCard from './components/PaystackBalanceCard';
 import TreasuryLedgerTable, { type LedgerRow } from './components/TreasuryLedgerTable';
 import FundTreasuryModal from './components/FundTreasuryModal';
 import { DonutChart, Sparkline, BarChart } from './components/TreasuryMiniCharts';
-
+import VendorTreasuryPanel from '@/components/admin/VendorTreasuryPanel';
 const POLL_MS = 30_000;
 
 export default function TreasuryDashboard() {
@@ -87,11 +87,12 @@ export default function TreasuryDashboard() {
 
   const sparkValues = useMemo(() => {
     const sorted = [...ledger].reverse();
-    let sum = 0;
-    return sorted.map(r => {
-      sum += r.direction === 'in' ? r.amount : -r.amount;
-      return sum;
-    });
+    return sorted.reduce<number[]>((acc, row) => {
+      const previous = acc.length ? acc[acc.length - 1] : 0;
+      const next = previous + (row.direction === 'in' ? row.amount : -row.amount);
+      acc.push(next);
+      return acc;
+    }, []);
   }, [ledger]);
 
   return (
@@ -201,7 +202,8 @@ export default function TreasuryDashboard() {
         onClose={() => setFundOpen(false)}
         onSuccess={() => { loadSummary(); loadLedger(); }}
       />
+
+      <VendorTreasuryPanel />
     </div>
   );
 }
-// force rebuild 2026-09-26
