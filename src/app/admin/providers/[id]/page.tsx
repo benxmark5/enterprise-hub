@@ -18,6 +18,7 @@ import {
   type ProviderApplication,
 } from '@/lib/providers/format';
 import { getStatusTheme } from '@/lib/admin/status-theme';
+import VendorKycPanel, { type KycDoc } from '@/components/admin/VendorKycPanel';
 
 export default function ProviderDetailPage() {
   const params = useParams();
@@ -25,6 +26,7 @@ export default function ProviderDetailPage() {
   const id = String(params?.id || '');
 
   const [app, setApp] = useState<ProviderApplication | null>(null);
+  const [kyc, setKyc] = useState<KycDoc[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -36,10 +38,25 @@ export default function ProviderDetailPage() {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch(`/api/admin/providers/${id}`, { cache: 'no-store' });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to load');
-      setApp(data.application as ProviderApplication);
+      const [appRes, kycRes] = await Promise.all([
+        fetch(`/api/admin/providers/${id}`, { cache: 'no-store' }),
+        fetch(`/api/admin/providers/${id}/kyc`, { cache: 'no-store' }),
+      ]);
+
+      if (!appRes.ok) {
+        const data = await appRes.json().catch(() => ({}));
+        throw new Error(data.error || 'Failed to load');
+      }
+
+      const appData = await appRes.json();
+      setApp(appData.application as ProviderApplication);
+
+      if (kycRes.ok) {
+        const kycData = await kycRes.json();
+        setKyc(kycData.documents ?? []);
+      } else {
+        setKyc([]);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load');
     } finally {
@@ -291,6 +308,15 @@ export default function ProviderDetailPage() {
                 })}
               </div>
             </GlassSection>
+
+            <VendorKycPanel
+              kind="provider"
+              entityId={id}
+              documents={kyc}
+              theme={theme}
+              onChanged={load}
+              isEditable={app.status !== 'rejected'}
+            />
 
             {app.status === 'pending' && (
               <div className="relative rounded-2xl p-5 space-y-3 overflow-hidden bg-slate-900/80 border border-slate-800/60 shadow-xl backdrop-blur-md">

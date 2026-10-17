@@ -4,13 +4,17 @@
 import { useState, useRef, useCallback } from 'react';
 import {
   Upload, Loader2, FileText, CheckCircle, XCircle, Download,
-  AlertCircle, Trash2, ShieldCheck,
+  AlertCircle, ShieldCheck,
 } from 'lucide-react';
 import { relativeTime } from '@/lib/providers/format';
 import type { StatusTheme } from '@/lib/admin/status-theme';
 
+export type KycKind = 'vendor' | 'provider';
+
 export type KycDocType =
   | 'national_id'
+  | 'national_id_front'
+  | 'national_id_back'
   | 'passport'
   | 'business_registration'
   | 'tax_id'
@@ -33,6 +37,8 @@ export type KycDoc = {
 
 const DOC_LABELS: Record<KycDocType, string> = {
   national_id: 'National ID',
+  national_id_front: 'National ID (front)',
+  national_id_back: 'National ID (back)',
   passport: 'Passport',
   business_registration: 'Business registration',
   tax_id: 'Tax ID',
@@ -46,6 +52,25 @@ const DOC_STATUS_STYLES: Record<KycDocStatus, string> = {
   expired:  'bg-slate-500/10 text-slate-300 border-slate-500/30',
 };
 
+// Which doc types the admin can upload from the dropdown
+const UPLOADABLE_DOC_TYPES: Record<KycKind, KycDocType[]> = {
+  vendor: [
+    'national_id',
+    'passport',
+    'business_registration',
+    'tax_id',
+    'proof_of_address',
+  ],
+  provider: [
+    'national_id_front',
+    'national_id_back',
+    'passport',
+    'proof_of_address',
+    'business_registration',
+    'tax_id',
+  ],
+};
+
 const MAX_SIZE = 10 * 1024 * 1024;
 const ALLOWED_MIME = ['application/pdf', 'image/jpeg', 'image/png'];
 
@@ -57,20 +82,23 @@ function formatBytes(n: number | null): string {
 }
 
 export default function VendorKycPanel({
-  vendorId,
+  kind = 'vendor',
+  entityId,
   documents,
   theme,
   onChanged,
   isEditable,
 }: {
-  vendorId: string;
+  kind?: KycKind;
+  entityId: string;
   documents: KycDoc[];
   theme: StatusTheme;
   onChanged: () => void | Promise<void>;
   isEditable: boolean;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [docType, setDocType] = useState<KycDocType>('national_id');
+  const allowedDocTypes = UPLOADABLE_DOC_TYPES[kind];
+  const [docType, setDocType] = useState<KycDocType>(allowedDocTypes[0]);
   const [uploading, setUploading] = useState(false);
   const [busyDocId, setBusyDocId] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
@@ -78,6 +106,11 @@ export default function VendorKycPanel({
   const [success, setSuccess] = useState('');
 
   const resetMessages = () => { setError(''); setSuccess(''); };
+
+  // API base path differs by kind
+  const apiBase = kind === 'vendor'
+    ? `/api/admin/vendors/${entityId}/kyc`
+    : `/api/admin/providers/${entityId}/kyc`;
 
   const handleUpload = useCallback(async (file: File) => {
     resetMessages();
@@ -97,10 +130,7 @@ export default function VendorKycPanel({
       form.append('doc_type', docType);
       form.append('file', file);
 
-      const res = await fetch(`/api/admin/vendors/${vendorId}/kyc`, {
-        method: 'POST',
-        body: form,
-      });
+      const res = await fetch(apiBase, { method: 'POST', body: form });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Upload failed');
       setSuccess(`${DOC_LABELS[docType]} uploaded.`);
@@ -111,7 +141,7 @@ export default function VendorKycPanel({
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
-  }, [docType, vendorId, onChanged]);
+  }, [docType, apiBase, onChanged]);
 
   const onFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
@@ -129,8 +159,10 @@ export default function VendorKycPanel({
     if (!confirm('Mark this document as verified?')) return;
     setBusyDocId(docId); resetMessages();
     try {
-      const res = await fetch(`/api/admin/vendors/${vendorId}/kyc/${docId}/verify`, {
+      const res = await fetch(`${apiBase}/${docId}/verify`, {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'verified' }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Verify failed');
@@ -143,13 +175,33 @@ export default function VendorKycPanel({
     }
   };
 
+  const doReset = async (docId: string) => {
+    if (!confirm('Reset this document back to pending?')) return;
+    setBusyDocId(docId); resetMessages();
+    try {
+      const res = await fetch(`${apiBase}/${docId}/verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'pending' }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Reset failed');
+      setSuccess('Document reset to pending.');
+      await onChanged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Reset failed');
+    } finally {
+      setBusyDocId(null);
+    }
+  };
+
   const doReject = async (docId: string) => {
-    const reason = prompt('Reason for rejecting this document:');
+    const reason = prompt('Reason for rejecting this document (visible to applicant):');
     if (reason === null) return;
     if (!reason.trim()) { setError('Rejection reason required'); return; }
     setBusyDocId(docId); resetMessages();
     try {
-      const res = await fetch(`/api/admin/vendors/${vendorId}/kyc/${docId}/reject`, {
+      const res = await fetch(`${apiBase}/${docId}/reject`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reason: reason.trim() }),
@@ -168,7 +220,7 @@ export default function VendorKycPanel({
   const doDownload = async (docId: string) => {
     setBusyDocId(docId); resetMessages();
     try {
-      const res = await fetch(`/api/admin/vendors/${vendorId}/kyc/${docId}/download`);
+      const res = await fetch(`${apiBase}/${docId}/download`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Download failed');
       window.open(data.url, '_blank', 'noopener');
@@ -183,7 +235,6 @@ export default function VendorKycPanel({
     <div className={`relative rounded-2xl p-6 overflow-hidden bg-slate-900/80 border border-slate-800/60 shadow-xl backdrop-blur-md ${theme.sectionBorder}`}>
       <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/15 to-transparent" aria-hidden />
 
-      {/* Header */}
       <div className="relative flex items-center gap-3 mb-4">
         <span className={`inline-flex items-center justify-center w-8 h-8 rounded-xl ${theme.chip}`}>
           <FileText size={14} />
@@ -196,7 +247,6 @@ export default function VendorKycPanel({
         </span>
       </div>
 
-      {/* Messages */}
       {error && (
         <div className="relative flex items-start gap-2 p-3 mb-4 bg-rose-500/10 border border-rose-500/20 rounded-xl">
           <AlertCircle size={16} className="text-rose-400 flex-shrink-0 mt-0.5" />
@@ -212,7 +262,6 @@ export default function VendorKycPanel({
         </div>
       )}
 
-      {/* Upload zone */}
       {isEditable && (
         <div className="relative mb-5">
           <div className="flex items-center gap-2 mb-2">
@@ -225,7 +274,7 @@ export default function VendorKycPanel({
               disabled={uploading}
               className="ml-auto appearance-none px-3 py-1.5 rounded-lg bg-slate-800/60 border border-slate-700/60 hover:border-blue-500/50 focus:border-blue-500/60 focus:outline-none text-xs text-slate-200 cursor-pointer transition-colors disabled:opacity-50"
             >
-              {(Object.keys(DOC_LABELS) as KycDocType[]).map(k => (
+              {allowedDocTypes.map(k => (
                 <option key={k} value={k} className="bg-slate-900 text-white">
                   {DOC_LABELS[k]}
                 </option>
@@ -271,7 +320,6 @@ export default function VendorKycPanel({
         </div>
       )}
 
-      {/* Document list */}
       {documents.length === 0 ? (
         <p className="relative text-sm text-slate-500 italic">
           No documents uploaded yet.
@@ -293,7 +341,7 @@ export default function VendorKycPanel({
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
                       <p className="text-sm font-bold text-slate-100">
-                        {DOC_LABELS[d.doc_type]}
+                        {DOC_LABELS[d.doc_type] ?? d.doc_type}
                       </p>
                       <span className={`inline-flex px-2 py-0.5 rounded-md text-[9px] font-bold uppercase border ${DOC_STATUS_STYLES[d.status]}`}>
                         {d.status}
@@ -336,6 +384,18 @@ export default function VendorKycPanel({
                       </button>
                     )}
 
+                    {isEditable && d.status === 'verified' && (
+                      <button
+                        type="button"
+                        onClick={() => doReset(d.id)}
+                        disabled={busy}
+                        title="Reset to pending"
+                        className="p-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 hover:border-amber-500/50 text-amber-300 transition disabled:opacity-40"
+                      >
+                        <ShieldCheck size={12} />
+                      </button>
+                    )}
+
                     {isEditable && d.status !== 'rejected' && (
                       <button
                         type="button"
@@ -355,9 +415,8 @@ export default function VendorKycPanel({
         </div>
       )}
 
-      {/* Retention note */}
       <p className="relative text-[10px] text-slate-500 italic mt-4 pt-3 border-t border-slate-800/60">
-        Files are stored in a private, admin-only bucket. Downloads use signed URLs that expire after 5 minutes.
+        Files are stored in a private, admin-only bucket. Downloads use signed URLs that expire after 5 minutes. Every view and action is logged.
       </p>
     </div>
   );

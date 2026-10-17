@@ -391,8 +391,9 @@ export default function VendorDetailPage() {
               )}
             </GlassSection>
 
-            <VendorKycPanel
-  vendorId={id}
+           <VendorKycPanel
+  kind="vendor"
+  entityId={id}
   documents={kyc}
   theme={theme}
   onChanged={load}
